@@ -69,6 +69,15 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
     INFO(NCCL_ENV, "NCCL_ALGO set by environment to %s", algoStr);
     NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
   }
+  // Disable CollNet if it is not supported
+  if (comm->collNetSupport == 0) {
+    algoEnable[NCCL_ALGO_COLLNET] = 0;
+    // If user has hard set NCCL_ALGO=COLLNET, ignore it
+    if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0) {
+      algoEnable[NCCL_ALGO_RING] = algoEnable[NCCL_ALGO_TREE] = 1;
+      if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
+    }
+  }
 
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     int pEnable = protoEnable[p];
@@ -178,16 +187,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   NCCLCHECK(ncclTuningLoadThresholds(comm));
   NCCLCHECK(ncclTuningDumpThresholds(comm));
 
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTuningAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
-  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
-  float lat = info->comm->latencies[info->coll][algorithm][protocol];
-  if (bw == 0) {
-    *time = -1.0; return ncclSuccess;
-  }
-  *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }
 

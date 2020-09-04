@@ -13,32 +13,22 @@ ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
 
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    channel->treeUp.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeUp.down[i] = -1;
-    channel->treeDn.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
+    channel->tree.up = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->tree.down[i] = -1;
 
     int* treeIntra = graph.intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (treeIntra[i] == rank) {
-        int recvIndex = 0, sendIndex = graph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
-        int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
+        int parentIndex = 0;
+        int child0Index = graph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
+        int child1Index = graph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ? 1 : 0;
 
-        // Tree loop always flows in the same direction. Other trees are symmetric, i.e.
-        // up/down go in reverse directions
-        int sym = graph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
-
-        // Down tree is common
-        topoRanks->treeDnRecv[c] = treeIntra[recvIndex];
-        topoRanks->treeDnSend[c] = treeIntra[sendIndex];
-        channel->treeDn.up       = treeIntra[prev];
-        channel->treeDn.down[0]  = treeIntra[next];
-        // Up tree depends on the pattern
-        topoRanks->treeUpRecv[c] = sym ? topoRanks->treeDnSend[c] : topoRanks->treeDnRecv[c];
-        topoRanks->treeUpSend[c] = sym ? topoRanks->treeDnRecv[c] : topoRanks->treeDnSend[c];
-        channel->treeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
-        channel->treeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
+        topoRanks->treeToParent[c] = treeIntra[parentIndex];
+        topoRanks->treeToChild0[c] = treeIntra[child0Index];
+        topoRanks->treeToChild1[c] = treeIntra[child1Index];
+        channel->tree.up         = i == 0 ? -1 : treeIntra[i-1];
+        channel->tree.down[0]    = i == localRanks-1 ? -1 : treeIntra[i+1];
       }
     }
   }
@@ -66,7 +56,7 @@ ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
  *    / \     / \     /  \     \
  *   1   3   5   7   9   11    13
  */
-ncclResult_t ncclAlgoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
+ncclResult_t ncclAlgoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* parentChildType) {
   int up, down0, down1;
   int bit;
   for (bit=1; bit<nranks; bit<<=1) {
@@ -75,13 +65,16 @@ ncclResult_t ncclAlgoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, i
 
   if (rank == 0) {
     *u = -1;
-    *d0 = nranks > 1 ? bit >> 1 : -1;
-    *d1 = -1;
+    *d0 = -1;
+    // Child rank is > 0 so it has to be our child 1, not 0.
+    *d1 = nranks > 1 ? bit >> 1 : -1;
     return ncclSuccess;
   }
 
   up = (rank ^ bit) | (bit << 1);
+  // if smaller than the parent, we are his first child, otherwise we're his second
   if (up >= nranks) up = (rank ^ bit);
+  *parentChildType = (rank < up) ? 0 : 1;
   *u = up;
 
   int lowbit = bit >> 1;
@@ -100,42 +93,42 @@ ncclResult_t ncclAlgoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, i
 }
 
 /* Build a double binary tree. Take the previous tree for the first tree.
- * For the second tree, we use a mirror tree (if nranks is odd)
+ * For the second tree, we use a mirror tree (if nranks is even)
  *
- *                 8---------0---------5
- *          ______/ \______      _____/ \______
- *         4               12   1              9
- *       /   \            /      \           /   \
- *     2       6       10          3       7      10
- *    / \     / \     /  \        / \     / \    /  \
- *   1   3   5   7   9   11      2   4   6   8  11  12
+ * 0---------------8                   3----------------11
+ *          ______/ \                 / \______
+ *         4         \               /         7
+ *       /   \        \             /        /   \
+ *     2       6       10         1        5      9
+ *    / \     / \     /  \       / \      / \    / \
+ *   1   3   5   7   9   11     0   2    4   6  8   10
  *
- * or shift it by one rank (if nranks is even)
+ * or shift it by one rank (if nranks is odd).
  *
- *                 8---------0--------------9
- *          ______/ \                ______/ \
- *         4         \              5         \
- *       /   \        \           /   \        \
- *     2       6       10       3       7       11
- *    / \     / \     /  \     / \     / \     /  \
- *   1   3   5   7   9   11   2   4   6   8   10   1
+ * 0---------------8            1---------------9
+ *          ______/ \______              ______/ \______
+ *         4               12           5                0
+ *       /   \            /           /   \            /
+ *     2       6       10           3       7       11
+ *    / \     / \     /  \         / \     / \     /  \
+ *   1   3   5   7   9   11       2   4   6   8  10   12
  */
-ncclResult_t ncclAlgoTree::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* s1, int* d1_0, int* d1_1) {
+ncclResult_t ncclAlgoTree::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* parentChildType0, int* s1, int* d1_0, int* d1_1, int* parentChildType1) {
   // First tree ... use a btree
-  ncclGetBtree(nranks, rank, s0, d0_0, d0_1);
+  ncclGetBtree(nranks, rank, s0, d0_0, d0_1, parentChildType0);
   // Second tree ... mirror or shift
-  if (nranks % 2 == 0) {
+  if (nranks % 2 == 1) {
     // shift
     int shiftrank = (rank-1+nranks) % nranks;
     int u, d0, d1;
-    ncclGetBtree(nranks, shiftrank, &u, &d0, &d1);
+    ncclGetBtree(nranks, shiftrank, &u, &d0, &d1, parentChildType1);
     *s1 = u == -1 ? -1 : (u+1) % nranks;
     *d1_0 = d0 == -1 ? -1 : (d0+1) % nranks;
     *d1_1 = d1 == -1 ? -1 : (d1+1) % nranks;
   } else {
     // mirror
     int u, d0, d1;
-    ncclGetBtree(nranks, nranks-1-rank, &u, &d0, &d1);
+    ncclGetBtree(nranks, nranks-1-rank, &u, &d0, &d1, parentChildType1);
     *s1 = u == -1 ? -1 : nranks-1-u;
     *d1_0 = d0 == -1 ? -1 : nranks-1-d0;
     *d1_1 = d1 == -1 ? -1 : nranks-1-d1;
@@ -143,117 +136,97 @@ ncclResult_t ncclAlgoTree::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0
   return ncclSuccess;
 }
 
+
 ncclResult_t ncclAlgoTree::getIndexes(int *ranks, int *indexes, int nNodes, int *firstRanks) {
-  for (int n = 0; n < nNodes; n++)
-	indexes[n] = ranks[firstRanks[n]];
+  for (int n = 0; n < nNodes; n++) indexes[n] = ranks[firstRanks[n]];
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::setTreeUp(struct ncclTree *tree0, struct ncclTree *tree1, int *indexes, int u0, int u1) {
-  if (u0 != -1)
-	tree0->up = indexes[u0];
-  if (u1 != -1)
-	tree1->up = indexes[u1];
+ncclResult_t ncclAlgoTree::setTreeUp(struct ncclTree* tree, int* indexes, int u) {
+  if (u == -1) return ncclSuccess;
+  tree->up = indexes[u];
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::addRanksDown(int *down, int *indexes, int r0, int r1) {
+ncclResult_t ncclAlgoTree::setTreeDown(struct ncclTree* tree, int* indexes, int d) {
+  if (d == -1) return ncclSuccess;
   int x = 0;
-  if (down[x] >= 0)
-	x++;
-  if (down[x] >= 0)
-  {
-	WARN("Internal error : tree already has more than one child (%d %d %d)\n", down[0], down[1], down[2]);
-	return ncclInternalError;
+  while (x < NCCL_MAX_TREE_ARITY && tree->down[x] >= 0) x++;
+  if (x == NCCL_MAX_TREE_ARITY) {
+    WARN("Internal error : tree already has %d children (%d %d %d)\n", x, tree->down[0], tree->down[1], tree->down[2]);
+    return ncclInternalError;
   }
-  if (r0 != -1)
-	down[x++] = indexes[r0];
-  if (r1 != -1)
-	down[x++] = indexes[r1];
+  tree->down[x] = indexes[d];
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::setTreeDown(struct ncclTree *tree0, struct ncclTree *tree1, int *indexes, int d0_0, int d0_1, int d1_0, int d1_1) {
-  NCCLCHECK(addRanksDown(tree0->down, indexes, d0_0, d0_1));
-  NCCLCHECK(addRanksDown(tree1->down, indexes, d1_0, d1_1));
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoTree::openRing(struct ncclTree *tree, int rank, int upRank)
-{
-  if (tree->down[0] == upRank)
-	tree->down[0] = -1;
-  if (rank == upRank)
-	tree->up = -1;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoTree::connectTrees(int* treeUpRecv, int* treeUpSend, int* treeDnRecv, int* treeDnSend, int* firstRanks) {
+ncclResult_t ncclAlgoTree::connectTrees(int* treeToParent, int* treeToChild0, int* treeToChild1, int* firstRanks, int* treePatterns) {
   const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
-  int* indexesSend, *indexesRecv;
-  NCCLCHECK(ncclCalloc(&indexesSend, nNodes));
-  NCCLCHECK(ncclCalloc(&indexesRecv, nNodes));
+  int* ranksToParent, *ranksToChild0, *ranksToChild1;
+  NCCLCHECK(ncclCalloc(&ranksToParent, nNodes));
+  NCCLCHECK(ncclCalloc(&ranksToChild0, nNodes));
+  NCCLCHECK(ncclCalloc(&ranksToChild1, nNodes));
 
   // Compute tree depth. Not an exact value but a good approximation in most
   // cases
   int depth = comm->nRanks/nNodes - 1 + log2i(nNodes);
 
-  int u0, d0_0, d0_1, u1, d1_0, d1_1;
-  NCCLCHECK(ncclGetDtree(nNodes, node, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
+  int t0u, t0d0, t0d1, t0ChildType, t1u, t1d0, t1d1, t1ChildType;
+  NCCLCHECK(ncclGetDtree(nNodes, node, &t0u, &t0d0, &t0d1, &t0ChildType, &t1u, &t1d0, &t1d1, &t1ChildType));
   for (int c=0; c<nChannels; c++) {
      struct ncclChannel* channel0 = comm->channels+c;
      struct ncclChannel* channel1 = channel0+nChannels;
-     NCCLCHECK(getIndexes(treeUpSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
-     NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
-     NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
-     NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
-     int root = indexesSend[node];
-     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesRecv, u0, u1));
-     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexesSend, d0_0, d0_1, d1_0, d1_1));
-     NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
-     NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
-     NCCLCHECK(openRing(&channel0->treeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
-     NCCLCHECK(openRing(&channel1->treeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
-     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexesRecv, d0_0, d0_1, d1_0, d1_1));
-     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesSend, u0, u1));
-     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
-     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
-     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c,           channel0->treeDn.up, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
-     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
-     channel0->treeUp.depth = channel1->treeUp.depth = depth;
+     NCCLCHECK(getIndexes(treeToParent+c*comm->nRanks, ranksToParent, nNodes, firstRanks));
+     NCCLCHECK(getIndexes(treeToChild0+c*comm->nRanks, ranksToChild0, nNodes, firstRanks));
+     NCCLCHECK(getIndexes(treeToChild1+c*comm->nRanks, ranksToChild1, nNodes, firstRanks));
+     if (comm->rank == ranksToParent[node]) {
+       NCCLCHECK(setTreeUp(&channel0->tree, t0ChildType == 0 ? ranksToChild0 : ranksToChild1, t0u));
+       NCCLCHECK(setTreeUp(&channel1->tree, t1ChildType == 0 ? ranksToChild0 : ranksToChild1, t1u));
+     }
+     if (comm->rank == ranksToChild0[node]) {
+       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d0));
+       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d0));
+     }
+     if (comm->rank == ranksToChild1[node]) {
+       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d1));
+       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d1));
+     }
+     if (comm->rank == ranksToParent[node] ||
+         comm->rank == ranksToChild0[node] ||
+         comm->rank == ranksToChild1[node]) {
+       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c,           channel0->tree.up, comm->rank, channel0->tree.down[0], channel0->tree.down[1], channel0->tree.down[2]);
+       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->tree.up, comm->rank, channel1->tree.down[0], channel1->tree.down[1], channel1->tree.down[2]);
+     }
+     channel0->tree.depth = channel1->tree.depth = depth;
   }
-  free(indexesSend);
-  free(indexesRecv);
+  free(ranksToParent);
+  free(ranksToChild0);
+  free(ranksToChild1);
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoTree::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   // Gather data from all ranks
-  int *treeUpRecv, *treeUpSend, *treeDnRecv, *treeDnSend;
+  int *treeToParent, *treeToChild0, *treeToChild1;
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
-  NCCLCHECK(ncclCalloc(&treeUpRecv, nranks * MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeUpSend, nranks * MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeDnRecv, nranks * MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeDnSend, nranks * MAXCHANNELS));
-  for (int i = 0; i < nranks; i++)
-  {
-	for (int c = 0; c < nChannels; c++)
-	{
-	  treeUpRecv[c * nranks + i] = allTopoRanks[i]->treeUpRecv[c];
-	  treeUpSend[c * nranks + i] = allTopoRanks[i]->treeUpSend[c];
-	  treeDnRecv[c * nranks + i] = allTopoRanks[i]->treeDnRecv[c];
-	  treeDnSend[c * nranks + i] = allTopoRanks[i]->treeDnSend[c];
-	}
+  NCCLCHECK(ncclCalloc(&treeToParent, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeToChild0, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeToChild1, nranks*MAXCHANNELS));
+  for (int i = 0; i < nranks; i++) {
+	  for (int c = 0; c < nChannels; c++) {
+      treeToParent[c*nranks+i] = allTopoRanks[i]->treeToParent[c];
+      treeToChild0[c*nranks+i] = allTopoRanks[i]->treeToChild0[c];
+      treeToChild1[c*nranks+i] = allTopoRanks[i]->treeToChild1[c];
+	  }
   }
 
   // Connect rings and trees. This should also duplicate the channels.
-  NCCLCHECK(connectTrees(treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks));
+  NCCLCHECK(connectTrees(treeToParent, treeToChild0, treeToChild1, firstRanks, treePatterns));
 
-  free(treeUpRecv);
-  free(treeUpSend);
-  free(treeDnRecv);
-  free(treeDnSend);
+  free(treeToParent);
+  free(treeToChild0);
+  free(treeToChild1);
 
   return ncclSuccess;
 }
@@ -262,43 +235,50 @@ ncclResult_t ncclAlgoTree::transportSetup() {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     if (comm->nRanks == 1) continue;
-    NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
-    NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+    NCCLCHECK(ncclTransportP2pConnect(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
+    NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
   }
+  NCCLCHECK(ncclTransportP2pSetup(comm, &graph));
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoTree::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
   int pattern = info->pattern;
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
-    struct ncclTree* tree = &args->channel->treeUp;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    struct ncclTree* tree = &args->channel->tree;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, tree->down[i], args));
+    NCCLCHECK(SaveProxy(proxySend, tree->up, args));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
-    struct ncclTree* tree = &args->channel->treeDn;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    struct ncclTree* tree = &args->channel->tree;
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->down[i], args));
+    NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoTree::tuningBw(int coll, int a, int compCap80) {
-  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
-  float busBw = graph.nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll] * graph.nChannels * 7.0 / 9.0;
-  // Various model refinements
-  if (compCap80)
-	busBw = std::min(busBw, 235.0f);
-  float maxTreeBw = comm->nNodes > 2 ? 80.0 : 110.0;
-  float maxTreeBwCompCap80 = comm->nNodes > 2 ? 105.0 : 130.0;
   // Convert bus BW to algorithm BW
   float ratio = .5;
   float LLRatio = 1.0 / 3.8;
   float LL128Ratio = comm->nNodes == 1 ? 7.0 / 9.0 : 0.915 /*120.0/128.0*/;
 
-  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = std::min(busBw * .9f, maxTreeBw) * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL] = std::min(busBw * .9f, maxTreeBw) * LLRatio * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(std::min(busBw * .9f, compCap80 ? maxTreeBwCompCap80 : maxTreeBw) * LL128Ratio, LL128BusBw) * ratio;
+  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
+  float busBw = graph.nChannels * speed;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+  int index2 = comm->nNodes <= 2 ? comm->nNodes-1 : 2;
+  // LL: for single node, we look at GPU type; for multi-node, we look at CPU type
+  int index1 = comm->nNodes == 1 ? compCap80 : cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD ? 1 : 0;
+  float perChMaxTreeBw = perChMaxTreeBws[compCap80][index2];
+  busBw = std::min(busBw * .92f, graph.nChannels * perChMaxTreeBw);
+  float llMaxBw = llMaxBws[index1][index2], LL128BusBw = ll128MaxBwPerCh[coll] * graph.nChannels;
+
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = std::min(busBw * LLRatio, llMaxBw) * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
 
   return ncclSuccess;
 }
@@ -323,18 +303,19 @@ ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
     *time = -1.0; return ncclSuccess;
   }
   int logSize = log2i(info->nBytes>>6);
-  if (logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
+  if (logSize < 23) bw *= treeCorrectionFactor[protocol][logSize];
+  if (info->nChannels != 0) bw = bw / info->comm->nChannels * info->nChannels;
   *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoTree::getPattern(int coll, int *pattern) const {
   switch (coll) {
-    case ncclCollBroadcast:
+    case ncclFuncBroadcast:
       *pattern = ncclPatternTreeDown; break;
-    case ncclCollReduce:
+    case ncclFuncReduce:
       *pattern = ncclPatternTreeUp; break;
-    case ncclCollAllReduce:
+    case ncclFuncAllReduce:
       *pattern = ncclPatternTreeUpDown; break;
     default:
       *pattern = -1;
@@ -356,17 +337,17 @@ ncclResult_t ncclAlgoTree::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const {
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       if (info->pattern == ncclPatternTreeUpDown) {
         // Optimize chunkSize / nSteps
-        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].treeUp.depth*8 && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
-        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].treeUp.depth*4 && sliceInfo->chunkSize > 65536) sliceInfo->chunkSize /= 2;
-        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].treeUp.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
+        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].tree.depth*8 && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
+        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].tree.depth*4 && sliceInfo->chunkSize > 65536) sliceInfo->chunkSize /= 2;
+        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].tree.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
       }
       // Use lastChunkSize as chunkSize
-      coll->args.coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
+      work->coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
       break;
     }
     case NCCL_PROTO_LL128: {
@@ -376,13 +357,19 @@ ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
       while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < nstepsLL128*64/ppn && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
       while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < nstepsLL128*16/ppn && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
       // Use lastChunkSize as chunkSize
-      coll->args.coll.lastChunkSize = sliceInfo->chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
+      work->coll.lastChunkSize = sliceInfo->chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
       break;
     }
     default: {
-      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
+      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, work);
       break;
     }
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoTree::enqueueChannelThread(struct ncclInfo *info) const {
+  this->ncclAlgoBase::enqueueChannelThread(info);
+  info->nThreads += WARP_SIZE;
   return ncclSuccess;
 }

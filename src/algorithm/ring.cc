@@ -77,7 +77,7 @@ void ncclAlgoRing::dumpLine(int* values, int nranks, const char* prefix) {
 
 ncclResult_t ncclAlgoRing::ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
   for (int r=0; r<nrings; r++) {
-    char prefix[30];
+    char prefix[40];
     sprintf(prefix, "[%d] Channel %d Prev : ", rank, r);
     dumpLine(prev+r*nranks, nranks, prefix);
     sprintf(prefix, "[%d] Channel %d Next : ", rank, r);
@@ -167,8 +167,9 @@ ncclResult_t ncclAlgoRing::transportSetup() {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(c, comm->rank, comm->nRanks, rings+c*comm->nRanks));
     if (comm->nRanks == 1) continue;
-    NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+    NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
   }
+  NCCLCHECK(ncclTransportP2pSetup(comm, &graph));
   if (rings == nullptr)
     return ncclInternalError;
   free(rings);
@@ -183,8 +184,8 @@ bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* r
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
   int index = pattern == ncclPatternPipelineFrom ?
       /*                            no recv /  no send    if root = */
-      /* bcast  */ (type == RECV ?   myrank : nextrank ):
-      /* reduce */ (type == RECV ? prevrank :   myrank );
+      /* bcast  */ (type == proxyRecv ?   myrank : nextrank ):
+      /* reduce */ (type == proxyRecv ? prevrank :   myrank );
   int rank = ring->userRanks[index];
   return (root != rank);
 }
@@ -192,40 +193,46 @@ bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* r
 ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
   int pattern = info->pattern;
   struct ncclRing* ring = &args->channel->ring;
-  if (NeedProxy(RECV, pattern, info->root, ring, info->comm->nRanks)) 
-    NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
-  if (NeedProxy(SEND, pattern, info->root, ring, info->comm->nRanks)) 
-    NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+  if (NeedProxy(proxyRecv, pattern, info->root, ring, info->comm->nRanks))
+    NCCLCHECK(SaveProxy(proxyRecv, ring->prev, args));
+  if (NeedProxy(proxySend, pattern, info->root, ring, info->comm->nRanks))
+    NCCLCHECK(SaveProxy(proxySend, ring->next, args));
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoRing::tuningBw(int coll, int a, int compCap80) {
-  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+  int nsteps = coll == ncclFuncAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclFuncReduceScatter || coll == ncclFuncAllGather ? comm->nRanks-1 :
     comm->nRanks;
-  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
-  float busBw = graph.nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*graph.nChannels;
-  // Various model refinements
-  if (compCap80) busBw = std::min(busBw, 235.0f);
   // Convert bus BW to algorithm BW
   float ratio = (1.0 * comm->nRanks) / nsteps;
-  float LLRatio = (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
+  float LLRatio = (comm->nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0 / 4.0 : 1.0 / 3.0;
   // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
   float LL128Ratio = (float)comm->nRanks / comm->nNodes < 2 ? 0.7 : 0.92 /*120.0/128.0*/;
 
-  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * LLRatio * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
+  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
+  float busBw = graph.nChannels * speed;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+  int index2 = comm->nNodes <= 2 ? comm->nNodes-1 : 2;
+  // LL: for single node, we look at GPU type; for multi-node, we look at CPU type
+  int index1 = comm->nNodes == 1 ? compCap80 : cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD ? 1 : 0;
+  float llMaxBw = llMaxBws[index1][index2], LL128BusBw = ll128MaxBwPerCh[coll] * graph.nChannels;
 
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = std::min(busBw * LLRatio, llMaxBw) * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
-  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+  int nsteps = coll == ncclFuncAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclFuncReduceScatter || coll == ncclFuncAllGather ? comm->nRanks-1 :
     comm->nRanks;
-  int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
-    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
+  int nInterSteps = coll == ncclFuncAllReduce ? 2*(comm->nNodes-1) :
+    coll == ncclFuncReduceScatter || coll == ncclFuncAllGather ? comm->nNodes-1 :
     comm->nNodes;
   int intraHw = graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
@@ -235,7 +242,7 @@ ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
     float interLat = hwLat[NCCL_HW_NET][a][p];
     if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
     float lat = hwLat[hw][a][p];
-    if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
+    if ((coll == ncclFuncReduce || coll == ncclFuncBroadcast)) {
       if (graph.sameChannels) {
         comm->latencies[coll][a][p] += lat;
       } else {
@@ -251,9 +258,9 @@ ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
 
 ncclResult_t ncclAlgoRing::tuningMaxThreads(int a) {
   this->ncclAlgoBase::tuningMaxThreads(a);
-  int simpleDefaultThreads = (graph.speedIntra * graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
+  int simpleDefaultThreads = (graph.speedIntra * graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
   comm->maxThreads[a][NCCL_PROTO_SIMPLE] =
-      getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
+      getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_SIMPLE_MAX_NTHREADS, simpleDefaultThreads);
   return ncclSuccess;
 }
 
@@ -263,7 +270,8 @@ ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }
-  if (protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1 && info->coll == ncclCollAllReduce 
+  if (info->nChannels != 0) bw = bw / info->comm->nChannels * info->nChannels;
+  if (protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1 && info->coll == ncclFuncAllReduce 
       && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
   *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
@@ -277,23 +285,22 @@ ncclResult_t ncclAlgoRing::tuningThresholds(int a) {
 
 ncclResult_t ncclAlgoRing::getPattern(int coll, int *pattern) const
 {
-  switch (coll)
-  {
-  case ncclCollBroadcast:
-    *pattern = ncclPatternPipelineFrom;
-    break;
-  case ncclCollReduce:
-    *pattern = ncclPatternPipelineTo;
-    break;
-  case ncclCollReduceScatter:
-  case ncclCollAllGather:
-    *pattern = ncclPatternRing;
-    break;
-  case ncclCollAllReduce:
-    *pattern = ncclPatternRingTwice;
-    break;
-  default:
-    *pattern = -1;
+  switch (coll) {
+    case ncclFuncBroadcast:
+      *pattern = ncclPatternPipelineFrom;
+      break;
+    case ncclFuncReduce:
+      *pattern = ncclPatternPipelineTo;
+      break;
+    case ncclFuncReduceScatter:
+    case ncclFuncAllGather:
+      *pattern = ncclPatternRing;
+      break;
+    case ncclFuncAllReduce:
+      *pattern = ncclPatternRingTwice;
+      break;
+    default:
+      *pattern = -1;
   }
   return ncclSuccess;
 }
@@ -315,7 +322,8 @@ ncclResult_t ncclAlgoRing::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem *work) const
+{
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       sliceInfo->chunkSteps = info->chunkSteps;
@@ -323,7 +331,7 @@ ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
       break;
     }
     default: {
-      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
+      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, work);
       break;
     }
   }

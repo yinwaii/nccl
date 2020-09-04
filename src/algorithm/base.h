@@ -19,7 +19,7 @@ public:
   ncclResult_t graphDump();
   virtual ncclResult_t enqueuePattern(struct ncclInfo* info) const;
   virtual ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
-  virtual ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
+  virtual ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem *work) const;
   virtual ncclResult_t enqueueChannelThread(struct ncclInfo *info) const;
   virtual ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks) = 0;
   virtual ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) = 0;

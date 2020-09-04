@@ -20,7 +20,7 @@ public:
 	ncclAlgoCollNet(int maxChannel = MAXCHANNELS / 2);
 	ncclResult_t getPattern(int coll, int *pattern) const;
 	ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
-	ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
+	ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const;
 	ncclResult_t enqueueChannelThread(struct ncclInfo *info) const;
 	ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
 	ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);

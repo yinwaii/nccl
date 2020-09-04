@@ -16,10 +16,8 @@ ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
 
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    channel->collTreeUp.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeUp.down[i] = -1;
-    channel->collTreeDn.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeDn.down[i] = -1;
+    channel->collTree.up = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTree.down[i] = -1;
 
     int* collNetIntra = graph.intra+c*localRanks;
 
@@ -27,12 +25,8 @@ ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
       if (collNetIntra[i] == rank) {
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
 
-        // CollTrees are always symmetric, i.e.
-        // up/down go in reverse directions
-        channel->collTreeDn.up      = collNetIntra[prev];
-        channel->collTreeDn.down[0] = collNetIntra[next];
-        channel->collTreeUp.down[0] = channel->collTreeDn.down[0];
-        channel->collTreeUp.up      = channel->collTreeDn.up;
+        channel->collTree.up      = collNetIntra[prev];
+        channel->collTree.down[0] = collNetIntra[next];
       }
     }
   }
@@ -49,27 +43,27 @@ ncclResult_t ncclAlgoCollNet::ncclTopoConnectCollNet(int rank) {
     struct ncclChannel* channel = comm->channels+c;
     // Set root of collTree to id nranks
     if (rank == graph.intra[sendIndex+c*comm->localRanks]) { // is master
-      channel->collTreeUp.up = channel->collTreeDn.up = nranks;
+      channel->collTree.up = nranks;
     }
     if (rank == graph.intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
-      channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
+      channel->collTree.down[0] = -1;
     }
-    channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
-    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeUp.up, channel->collTreeUp.down[0]);
+    channel->collTree.depth = depth;
+    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTree.up, channel->collTree.down[0]);
   }
   int recvIndex = 0;  // recv GPU index is always 0
   int recvEndIndex = (recvIndex+comm->localRanks-1)%comm->localRanks;
   for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+comm->nChannels+c;
+    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
     // Set root of collTree to id nranks
     if (rank == graph.intra[recvIndex+c*comm->localRanks]) { // is master
-      channel->collTreeUp.up = channel->collTreeDn.up = nranks;
+      channel->collTree.up = nranks;
     }
     if (rank == graph.intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
-      channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
+      channel->collTree.down[0] = -1;
     }
-    channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
-    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", comm->nChannels+c, rank, channel->collTreeDn.up, channel->collTreeDn.down[0]);
+    channel->collTree.depth = depth;
+    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", comm->nChannels/2+c, rank, channel->collTree.up, channel->collTree.down[0]);
   }
   return ncclSuccess;
 }
@@ -124,7 +118,7 @@ int ncclAlgoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nra
   // setup
   struct ncclConnect myConnect;
   if (isMaster && ret > 0) {
-    NCCLCHECK(transportComm->setup(comm->topo, &graph, myInfo, peerInfo, &myConnect, conn, channel->id));
+    NCCLCHECK(transportComm->setup(comm, &graph, myInfo, peerInfo, &myConnect, conn, channel->id));
   }
   // prepare connect handles
   ncclResult_t res;
@@ -154,7 +148,7 @@ int ncclAlgoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nra
   }
   // connect
   if (isMaster && ret > 0) {
-    NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
+    NCCLCHECKGOTO(transportComm->connect(comm, masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
     struct ncclPeer* devRoot = channel->devPeers+nranks;
     struct ncclConnector* devConn = (type == 1) ? &devRoot->recv : &devRoot->send;
     CUDACHECKGOTO(cudaMemcpy(devConn, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice), res, cleanup);
@@ -221,8 +215,8 @@ ncclResult_t ncclAlgoCollNet::transportSetup() {
     for (int c=0; c<logicChannels; c++) {
       struct ncclChannel* channelRecv = comm->channels+logicChannels+c;
       struct ncclChannel* channelSend = comm->channels+c;
-      NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channelRecv, 1, &channelRecv->collTreeDn.up, 1, channelRecv->collTreeDn.down));
-      NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channelSend, 1, channelSend->collTreeUp.down, 1, &channelSend->collTreeUp.up));
+      NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, 1, &channelRecv->collTree.up, 1, channelRecv->collTree.down));
+      NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, 1, channelSend->collTree.down, 1, &channelSend->collTree.up));
       const int recvMaster = graph.intra[c*comm->localRanks+recvIndex];
       const int sendMaster = graph.intra[c*comm->localRanks+sendIndex];
       if (collNetSetup(channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
@@ -242,29 +236,30 @@ ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, struct n
   info->pattern = (channelId < info->comm->nChannels / info->nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
   if (info->pattern == ncclPatternCollTreeUp) {
     // CollTree up
-    struct ncclTree *tree = &args->channel->collTreeUp;
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    struct ncclTree *tree = &args->channel->collTree;
+    NCCLCHECK(SaveProxy(proxyRecv, tree->down[0], args));
+    NCCLCHECK(SaveProxy(proxySend, tree->up, args));
   }
   if (info->pattern == ncclPatternCollTreeDown) {
     // CollTree down
-    struct ncclTree *tree = &args->channel->collTreeDn;
-    NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    struct ncclTree *tree = &args->channel->collTree;
+    NCCLCHECK(SaveProxy(proxySend, tree->down[0], args));
+    NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclAlgoCollNet::tuningBw(int coll, int a, int compCap80) {
+  // Convert bus BW to algorithm BW
+  float ratio = .5, LLratio = 1.0/6.0;
   float speed = graph.speedIntra;
   float busBw = graph.nChannels * speed;
   // Various model refinements
   if (compCap80) busBw = std::min(busBw, 235.0f);
-  // Convert bus BW to algorithm BW
-  float ratio = .5;
+  busBw *= .9;
 
-  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * .9 * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * .9 * 1.0/6.0 * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * LLratio * ratio;
   comm->bandwidths[coll][a][NCCL_PROTO_LL128] = 0;
 
   return ncclSuccess;
@@ -285,7 +280,7 @@ ncclResult_t ncclAlgoCollNet::tuningLat(int coll, int a) {
 
 ncclResult_t ncclAlgoCollNet::getPattern(int coll, int *pattern) const {
   switch (coll) {
-    case ncclCollAllReduce:
+    case ncclFuncAllReduce:
       *pattern = ncclPatternCollTreeUp; break;
     default:
       *pattern = -1;
@@ -306,19 +301,19 @@ ncclResult_t ncclAlgoCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const {
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       // Optimize chunkSize / nSteps
-      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth*16 && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
-      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth*4 && sliceInfo->chunkSize > 65536) sliceInfo->chunkSize /= 2;
-      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTree.depth*16 && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTree.depth*4 && sliceInfo->chunkSize > 65536) sliceInfo->chunkSize /= 2;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTree.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
       // Use lastChunkSize as chunkSize
-      coll->args.coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
+      work->coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
       break;
     }
     default: {
-      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
+      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, work);
       break;
     }
   }
@@ -327,7 +322,7 @@ ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSli
 
 ncclResult_t ncclAlgoCollNet::enqueueChannelThread(struct ncclInfo *info) const {
   ncclComm *comm = info->comm;
-  int nc = comm->nChannels / 2; // CollNet uses one channel for up and one channel for down
+  int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels / 2; // CollNet uses one channel for up and one channel for down
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
