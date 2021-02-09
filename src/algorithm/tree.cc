@@ -370,6 +370,7 @@ ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
 
 ncclResult_t ncclAlgoTree::enqueueChannelThread(struct ncclInfo *info) const {
   this->ncclAlgoBase::enqueueChannelThread(info);
-  info->nThreads += WARP_SIZE;
+  if (info->protocol == NCCL_PROTO_SIMPLE) 
+    info->nThreads += WARP_SIZE;
   return ncclSuccess;
 }
