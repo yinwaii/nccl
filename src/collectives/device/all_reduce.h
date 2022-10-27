@@ -252,30 +252,9 @@ namespace {
       }
     }
   }
-}
 
-template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
-  __device__ __forceinline__ void run(ncclWorkElem *args) {
-    using Proto = ProtoSimple<ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS>;
-    runRing<T, RedOp, Proto>(args);
-  }
-};
-
-template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE> {
-  __device__ __forceinline__ void run(ncclWorkElem *args) {
-    #if CUDART_VERSION >= 11020 && CUDART_VERSION < 11040 && __CUDA_ARCH__ >= 800
-      runTreeUpDown<T, RedOp, ProtoSimple<1, 1>>(args);
-    #else
-      runTreeSplit<T, RedOp, ProtoSimple<1, 1>>(args);
-    #endif
-  }
-};
-
-template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_PROTO_SIMPLE> {
-  __device__ __forceinline__ void run(ncclWorkElem *args) {
+  template<typename T, typename RedOp, typename Proto>
+  __device__ __forceinline__ void runCollnetDirect(ncclWorkElem *args) {
     static constexpr int COLLNET_COPY_THREADS = 96;
     const int tid = threadIdx.x;
     const int bid = args->bid;
@@ -294,8 +273,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
     const int tidStartBcast = nThreadsGather;
     const int tidStartScatter = tidStartBcast + nThreadsBcast;
     const int tidStartReduce = tidStartScatter + nThreadsScatter;
-
-    using Proto = ProtoSimple<1, 1>;
 
     if (tid >= tidStartScatter && tid < tidStartReduce && hasUp) {
       // Scatter
@@ -369,11 +346,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
       }
     }
   }
-};
-
-template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PROTO_SIMPLE> {
-  __device__ __forceinline__ void run(ncclWorkElem *args) {
+  
+  template<typename T, typename RedOp, typename Proto>
+  __device__ __forceinline__ void runCollnetChain(ncclWorkElem *args) {
     const int tid = threadIdx.x;
     const int nthreads = args->nWarps*WARP_SIZE;
     const int bid = args->bid;
@@ -387,7 +362,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
     if (nthreadsSplit >= 256) nthreadsSplit += 64;
 
     int group, send, recv, groupTid, groupNthreads;
-    using Proto = ProtoSimple<1, 1>;
+
     if (tid < nthreadsSplit) {
       group = (0*Proto::MaxGroupWidth) | (1<<16);
       recv = tree->down[0];
@@ -435,6 +410,39 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
         }
       }
     }
+  }
+}
+
+template<typename T, typename RedOp>
+struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
+  __device__ __forceinline__ void run(ncclWorkElem *args) {
+    using Proto = ProtoSimple<ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS>;
+    runRing<T, RedOp, Proto>(args);
+  }
+};
+
+template<typename T, typename RedOp>
+struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE> {
+  __device__ __forceinline__ void run(ncclWorkElem *args) {
+    #if CUDART_VERSION >= 11020 && CUDART_VERSION < 11040 && __CUDA_ARCH__ >= 800
+      runTreeUpDown<T, RedOp, ProtoSimple<1, 1>>(args);
+    #else
+      runTreeSplit<T, RedOp, ProtoSimple<1, 1>>(args);
+    #endif
+  }
+};
+
+template<typename T, typename RedOp>
+struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_PROTO_SIMPLE> {
+  __device__ __forceinline__ void run(ncclWorkElem *args) {
+    runCollnetDirect<T, RedOp, ProtoSimple<1, 1>>(args);
+  }
+};
+
+template<typename T, typename RedOp>
+struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PROTO_SIMPLE> {
+  __device__ __forceinline__ void run(ncclWorkElem *args) {
+    runCollnetChain<T, RedOp, ProtoSimple<1, 1>>(args);
   }
 };
 
