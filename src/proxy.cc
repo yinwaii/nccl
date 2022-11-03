@@ -5,9 +5,9 @@
  ************************************************************************/
 
 #include "comm.h"
-#include "../graph/rings.h"
-#include "../graph/trees.h"
-#include "../graph/collnets.h"
+#include "graph/rings.h"
+#include "graph/trees.h"
+#include "graph/collnets.h"
 #include "info.h"
 #include "collectives.h"
 #include "socket.h"

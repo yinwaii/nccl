@@ -1,6 +1,8 @@
 #include "nccl.h"
 #include "comm.h"
 #include "topo.h"
+#include "channel.h"
+#include "bootstrap.h"
 
 ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph) {
   int rank = comm->rank;
@@ -95,5 +97,105 @@ ncclResult_t ncclProxySaveOpCollnetDirect(struct ncclComm* comm, struct ncclProx
   struct ncclChannel *channel = &comm->channels[op->channelId];
   NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetDirect.out, op, 1, justInquire));
   NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetDirect.out, op, 0, justInquire));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTransportCollnet(struct ncclComm* comm, struct ncclTopoGraph* graph) {
+  ncclResult_t ret;
+  if (comm->collNetSupport > 0) {
+    int collNetSetupFail = 0;
+    int highestTypes[NCCL_MAX_LOCAL_RANKS] = {TRANSPORT_P2P};
+    // Find all head ranks
+    int nHeads = graph->nChannels;
+    int *heads;
+    NCCLCHECK(ncclCalloc(&heads, nHeads));
+    // Head GPU index is always 0
+    for (int c=0; c<nHeads; c++) {
+      heads[c] = graph->intra[c*comm->localRanks+0];
+    }
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      for (int h=0; h<nHeads; h++) {
+        const int head = heads[h];
+        collNetSetupFail = ncclTransportCollNetSetup(comm, graph, channel, head, head, h, collNetRecv);
+        if (!collNetSetupFail) collNetSetupFail = ncclTransportCollNetSetup(comm, graph, channel, head, head, h, collNetSend);
+      }
+      // Verify CollNet setup across ranks after trying the first channel
+      if (c == 0) {
+        NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
+      }
+    }
+    // Verify CollNet setup across ranks after trying all channels
+    NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
+    TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", comm->rank);
+
+    char line[1024];
+    line[0]='\0';
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclTree* chain = &comm->channels[c].collnetChain;
+      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d",
+          c, chain->down[0], comm->rank, chain->up);
+    }
+    line[1023] = '\0';
+    INFO(NCCL_INIT, "Collnet Chains %s", line);
+    // Connect Collnet + chain
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, channel->collnetChain.down, 0), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, graph, 0), ret, collnet_cleanup);
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, graph, 1), ret, collnet_cleanup);
+    INFO(NCCL_INIT, "Connected collnet + chain");
+
+    // Connect intra-node CollNet + Direct
+    int highestTransportType0, highestTransportType1;
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channelRecv = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.down, 0), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, graph, 0, &highestTransportType0), ret, collnet_cleanup);
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channelSend = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.down, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.up, 1), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, graph, 1, &highestTransportType1), ret, collnet_cleanup);
+
+    // Exchange highest intra-node transport type among ranks
+    // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
+    comm->intraHighestTransportType = highestTypes[comm->localRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
+    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, highestTypes, sizeof(int)));
+    for (int i=0; i<comm->localRanks; i++) {
+      if (highestTypes[i] > comm->intraHighestTransportType)
+        comm->intraHighestTransportType = highestTypes[i];
+    }
+    INFO(NCCL_INIT, "rank %d Connected CollNet", comm->rank);
+
+collnet_cleanup:
+    free(heads);
+    if (ret != ncclSuccess) {
+      NCCLCHECK(ncclTransportCollNetFree(comm));
+      comm->collNetSupport = 0;
+      ret = ncclSuccess;
+    }
+  }
+  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", comm->rank, comm->nRanks, comm->nChannels);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPostsetCollnet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int* rings) {
+  int nChannels = comm->nChannels;
+  // Setup CollNet
+  if (comm->collNetSupport == 1) {
+    // Add more channels to saturate intra-node bandwidth, except the 1 PPN case
+    if (collNetGraph->bwIntra > collNetGraph->bwInter && comm->nRanks > comm->nNodes) {
+      int collNetNchannels = std::min(MAXCHANNELS, nChannels+nChannels/2);
+      nChannels = comm->nChannels = copyChannels(comm, nChannels, collNetNchannels, rings);
+    }
+    NCCLCHECK(connectCollNet(comm, collNetGraph));
+  }
   return ncclSuccess;
 }

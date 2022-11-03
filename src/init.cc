@@ -15,6 +15,9 @@
 #include "coll_net.h"
 #include "enqueue.h"
 #include "graph.h"
+#include "graph/rings.h"
+#include "graph/trees.h"
+#include "graph/collnets.h"
 #include "argcheck.h"
 #include <fcntl.h>
 #include <string.h>
@@ -454,24 +457,6 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   return ncclSuccess;
 }
 
-static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
-  TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
-  NCCLCHECK(initChannel(comm, channelId));
-
-  struct ncclRing* ring = &comm->channels[channelId].ring;
-  // Find our ring-distance from rank zero and reorganize ranks to start with rank.
-  int ixZero=0, ixRank=0;
-  for (int i=0; i < nranks; i++) {
-    if (ringRanks[i] == 0) ixZero = i;
-    if (ringRanks[i] == rank) ixRank = i;
-  }
-  ring->index = (ixRank-ixZero + nranks)%nranks;
-  for (int i=0; i<nranks; i++) {
-    ring->userRanks[i] = ringRanks[(i+ixRank)%nranks];
-  }
-  return ncclSuccess;
-}
-
 #define DEFAULT_LL_BUFFSIZE (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_STEPS*sizeof(union ncclLLFifoLine))
 #define DEFAULT_LL128_BUFFSIZE (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS*NCCL_STEPS*sizeof(uint64_t))
 #define DEFAULT_BUFFSIZE (1 << 22) /* 4MiB */
@@ -738,109 +723,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(computeBuffSizes(comm));
 
-  // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, affinity_restore);
-    if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->ring.prev, 1, &channel->ring.next, 0), ret, affinity_restore);
+    TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
+    NCCLCHECKGOTO(initChannel(comm, c), ret, affinity_restore);
   }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &ringGraph, 0), ret, affinity_restore);
-  free(rings);
-  INFO(NCCL_INIT, "Connected all rings");
+
+  // Connect with prev/next for each ring
+  NCCLCHECKGOTO(ncclTransportRing(comm, &ringGraph, rings), ret, affinity_restore);
 
   // Connect Trees
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up, 0), ret, affinity_restore);
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down, 0), ret, affinity_restore);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, 0), ret, affinity_restore);
-  INFO(NCCL_INIT, "Connected all trees");
+  NCCLCHECKGOTO(ncclTransportTree(comm, &treeGraph), ret, affinity_restore);
 
   // Check if we can setup CollNet
-  if (comm->collNetSupport > 0) {
-    int collNetSetupFail = 0;
-    int highestTypes[NCCL_MAX_LOCAL_RANKS] = {TRANSPORT_P2P};
-    // Find all head ranks
-    int nHeads = collNetGraph.nChannels;
-    int *heads;
-    NCCLCHECK(ncclCalloc(&heads, nHeads));
-    // Head GPU index is always 0
-    for (int c=0; c<nHeads; c++) {
-      heads[c] = collNetGraph.intra[c*comm->localRanks+0];
-    }
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channel = comm->channels+c;
-      for (int h=0; h<nHeads; h++) {
-        const int head = heads[h];
-        collNetSetupFail = ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetRecv);
-        if (!collNetSetupFail) collNetSetupFail = ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetSend);
-      }
-      // Verify CollNet setup across ranks after trying the first channel
-      if (c == 0) {
-        NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
-      }
-    }
-    // Verify CollNet setup across ranks after trying all channels
-    NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
-    TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
-
-    char line[1024];
-    line[0]='\0';
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclTree* chain = &comm->channels[c].collnetChain;
-      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d",
-          c, chain->down[0], rank, chain->up);
-    }
-    line[1023] = '\0';
-    INFO(NCCL_INIT, "Collnet Chains %s", line);
-    // Connect Collnet + chain
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channel = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, channel->collnetChain.down, 0), ret, collnet_cleanup);
-    }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0), ret, collnet_cleanup);
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channel = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, collnet_cleanup);
-    }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1), ret, collnet_cleanup);
-    INFO(NCCL_INIT, "Connected collnet + chain");
-
-    // Connect intra-node CollNet + Direct
-    int highestTransportType0, highestTransportType1;
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channelRecv = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.down, 0), ret, collnet_cleanup);
-    }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0, &highestTransportType0), ret, collnet_cleanup);
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channelSend = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.down, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.up, 1), ret, collnet_cleanup);
-    }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1, &highestTransportType1), ret, collnet_cleanup);
-
-    // Exchange highest intra-node transport type among ranks
-    // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
-    comm->intraHighestTransportType = highestTypes[comm->localRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
-    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, highestTypes, sizeof(int)));
-    for (int i=0; i<comm->localRanks; i++) {
-      if (highestTypes[i] > comm->intraHighestTransportType)
-        comm->intraHighestTransportType = highestTypes[i];
-    }
-    INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
-
-collnet_cleanup:
-    free(heads);
-    if (ret != ncclSuccess) {
-      NCCLCHECK(ncclTransportCollNetFree(comm));
-      comm->collNetSupport = 0;
-      ret = ncclSuccess;
-    }
-  }
-  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
+  NCCLCHECKGOTO(ncclTransportCollnet(comm, &collNetGraph), ret, affinity_restore);
 
   // Compute time models for algorithm and protocol combinations
   do {

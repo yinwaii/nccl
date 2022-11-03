@@ -8,6 +8,7 @@
 #define NCCL_CHANNEL_H_
 #include "comm.h"
 
+int copyChannels(struct ncclComm* comm, int start, int end, int* rings);
 ncclResult_t initChannel(struct ncclComm* comm, int channelid);
 ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks);
 static ncclResult_t ncclChannelComputeBase(struct ncclComm* comm, int peer, int coll, int*channelBase) {

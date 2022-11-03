@@ -59,7 +59,7 @@ ncclResult_t ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* p
 }
 
 ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ringSend, int* ringPrev, int* ringNext, int* firstRanks) {
-  int nChannels = comm->nChannels;
+  int nChannels = comm->nChannels / 2;
   int nNodes = comm->nNodes;
   for (int c=0; c<nChannels; c++) {
     int* recv = ringRecv+c*comm->nRanks;
@@ -137,5 +137,66 @@ ncclResult_t ncclProxySaveOpRing(struct ncclComm* comm, struct ncclProxyOp* op, 
   if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
     NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0, justInquire));
   }
+  return ncclSuccess;
+}
+
+static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
+  struct ncclRing* ring = &comm->channels[channelId].ring;
+  // Find our ring-distance from rank zero and reorganize ranks to start with rank.
+  int ixZero=0, ixRank=0;
+  for (int i=0; i < nranks; i++) {
+    if (ringRanks[i] == 0) ixZero = i;
+    if (ringRanks[i] == rank) ixRank = i;
+  }
+  ring->index = (ixRank-ixZero + nranks)%nranks;
+  for (int i=0; i<nranks; i++) {
+    ring->userRanks[i] = ringRanks[(i+ixRank)%nranks];
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTransportRing(struct ncclComm* comm, struct ncclTopoGraph* graph, int *rings) {
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    NCCLCHECK(setupChannel(comm, c, comm->rank, comm->nRanks, rings+c*comm->nRanks));
+    if (comm->nRanks == 1) continue;
+    NCCLCHECK(ncclTransportP2pConnect(comm, c, 1, &channel->ring.prev, 1, &channel->ring.next, 0));
+  }
+  NCCLCHECK(ncclTransportP2pSetup(comm, graph, 0));
+  free(rings);
+  INFO(NCCL_INIT, "Connected all rings");
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings) {
+  int *ringRecv, *ringSend, *ringPrev, *ringNext;
+  int nranks = comm->nRanks;
+  int nChannels = comm->nChannels / 2;
+  NCCLCHECK(ncclCalloc(&ringRecv, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&ringSend, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&ringPrev, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&ringNext, nranks*MAXCHANNELS));
+  for (int i=0; i<nranks; i++) {
+    for (int c=0; c<nChannels;c++) {
+      ringRecv[c*nranks+i] = allTopoRanks[i]->ringRecv[c];
+      ringSend[c*nranks+i] = allTopoRanks[i]->ringSend[c];
+      ringPrev[c*nranks+i] = allTopoRanks[i]->ringPrev[c];
+      ringNext[c*nranks+i] = allTopoRanks[i]->ringNext[c];
+    }
+  }
+  // Connect rings and trees. This should also duplicate the channels.
+  NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext, firstRanks));
+
+  // Create rings array and check all is fine
+  NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
+
+  // Duplicate rings
+  memcpy(rings+nChannels*nranks, rings, nChannels*nranks*sizeof(int));
+
+  free(ringRecv);
+  free(ringSend);
+  free(ringPrev);
+  free(ringNext);
+
   return ncclSuccess;
 }

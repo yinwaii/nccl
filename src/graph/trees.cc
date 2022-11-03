@@ -134,7 +134,7 @@ static ncclResult_t setTreeDown(struct ncclTree* tree, int* indexes, int d) {
 }
 
 ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* treeToChild0, int* treeToChild1, int* firstRanks, int* treePatterns) {
-  const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
+  const int nChannels = comm->nChannels / 2, nNodes = comm->nNodes, node = comm->node;
   int* ranksToParent, *ranksToChild0, *ranksToChild1;
   NCCLCHECK(ncclCalloc(&ranksToParent, nNodes));
   NCCLCHECK(ncclCalloc(&ranksToChild0, nNodes));
@@ -207,31 +207,6 @@ ncclResult_t ncclTopoPresetTree(struct ncclComm* comm, struct ncclTopoGraph* tre
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks) {
-  // Gather data from all ranks
-  int *treeToParent, *treeToChild0, *treeToChild1;
-  int nranks = comm->nRanks;
-  int nChannels = comm->nChannels;
-  NCCLCHECK(ncclCalloc(&treeToParent, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeToChild0, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeToChild1, nranks*MAXCHANNELS));
-  for (int i=0; i<nranks; i++) {
-    for (int c=0; c<nChannels;c++) {
-      treeToParent[c*nranks+i] = allTopoRanks[i]->treeToParent[c];
-      treeToChild0[c*nranks+i] = allTopoRanks[i]->treeToChild0[c];
-      treeToChild1[c*nranks+i] = allTopoRanks[i]->treeToChild1[c];
-    }
-  }
-
-  // Connect rings and trees. This should also duplicate the channels.
-  NCCLCHECK(connectTrees(comm, treeToParent, treeToChild0, treeToChild1, firstRanks, treePatterns));
-  free(treeToParent);
-  free(treeToChild0);
-  free(treeToChild1);
-
-  return ncclSuccess;
-}
-
 ncclResult_t ncclProxySaveOpTree(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
   struct ncclChannel* channel = &comm->channels[op->channelId];
   if (op->pattern != ncclPatternTreeDown) { // Tree up
@@ -248,5 +223,43 @@ ncclResult_t ncclProxySaveOpTree(struct ncclComm* comm, struct ncclProxyOp* op, 
     }
     NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0, justInquire));
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTransportTree(struct ncclComm* comm, struct ncclTopoGraph* graph) {
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    if (comm->nRanks == 1) continue;
+    NCCLCHECK(ncclTransportP2pConnect(comm, c, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up, 0));
+    NCCLCHECK(ncclTransportP2pConnect(comm, c, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down, 0));
+  }
+  NCCLCHECK(ncclTransportP2pSetup(comm, graph, 0));
+  INFO(NCCL_INIT, "Connected all trees");
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int *firstRanks, int *treePatterns, struct ncclTopoRanks** allTopoRanks) {
+  // Gather data from all ranks
+  int *treeToParent, *treeToChild0, *treeToChild1;
+  int nranks = comm->nRanks;
+  int nChannels = comm->nChannels / 2;
+  NCCLCHECK(ncclCalloc(&treeToParent, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeToChild0, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeToChild1, nranks*MAXCHANNELS));
+  for (int i=0; i<nranks; i++) {
+    for (int c=0; c<nChannels;c++) {
+      treeToParent[c*nranks+i] = allTopoRanks[i]->treeToParent[c];
+      treeToChild0[c*nranks+i] = allTopoRanks[i]->treeToChild0[c];
+      treeToChild1[c*nranks+i] = allTopoRanks[i]->treeToChild1[c];
+    }
+  }
+
+  // Connect rings and trees. This should also duplicate the channels.
+  NCCLCHECK(connectTrees(comm, treeToParent, treeToChild0, treeToChild1, firstRanks, treePatterns));
+
+  free(treeToParent);
+  free(treeToChild0);
+  free(treeToChild1);
+
   return ncclSuccess;
 }
