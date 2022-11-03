@@ -60,11 +60,11 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph* collNetGraph) {
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, struct ncclTopoGraph* collNetGraph) {
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
-  NCCLCHECK(ncclTopoPostsetRing(comm, firstRanks, allTopoRanks, rings));
+  NCCLCHECK(ncclTopoPostsetRing(comm, firstRanks, allTopoRanks));
   NCCLCHECK(ncclTopoPostsetTree(comm, firstRanks, allTopoRanks));
   NCCLCHECK(ncclTopoPostsetCollNet(comm, collNetGraph));
 
@@ -75,6 +75,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
   // We permit combining max, then min, to only use the first channels, then duplicate them.
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
   int c;
+  extern int* rings;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
     memcpy(rings+c*nranks, rings+(c-nChannels)*nranks, nranks*sizeof(int));
     memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));

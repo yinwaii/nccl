@@ -10,6 +10,9 @@
 #define MAXWIDTH 20
 #define PREFIXLEN 15
 #define STRLENGTH (PREFIXLEN+5*MAXWIDTH)
+
+int *rings;
+
 void dumpLine(int* values, int nranks, const char* prefix) {
   int prefixlen = strlen(prefix);
   char line[STRLENGTH+1];
@@ -113,7 +116,7 @@ ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* rin
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings) {
+ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext;
   int nranks = comm->nRanks;
@@ -131,6 +134,7 @@ ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct 
     }
   }
 
+  NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
   // Connect rings and trees. This should also duplicate the channels.
   NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext, firstRanks));
   // Create rings array and check all is fine
@@ -162,7 +166,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int* rings) {
+ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph) {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, comm->rank, comm->nRanks, rings+c*comm->nRanks));

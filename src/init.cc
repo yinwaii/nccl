@@ -594,10 +594,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
-  int *rings;
-  NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
-
-  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings, &collNetGraph));
+  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, &collNetGraph));
 
   free(allTopoRanks);
   free(nodesFirstRank);
@@ -636,12 +633,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(initChannel(comm, c), ret, affinity_restore);
   }
 
-  NCCLCHECKGOTO(ncclTransportSetupRing(comm, &ringGraph, rings), ret, affinity_restore);
+  NCCLCHECKGOTO(ncclTransportSetupRing(comm, &ringGraph), ret, affinity_restore);
   NCCLCHECKGOTO(ncclTransportSetupTree(comm, &treeGraph), ret, affinity_restore);
   NCCLCHECKGOTO(ncclTransportSetupCollNet(comm, &collNetGraph), ret, affinity_restore)
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
-  free(rings);
 
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
