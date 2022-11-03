@@ -14,7 +14,7 @@ LIBSRCFILES := init.cc channel.cc bootstrap.cc transport.cc enqueue.cc group.cc 
 		misc/utils.cc misc/argcheck.cc misc/socket.cc misc/shmutils.cc misc/profiler.cc misc/param.cc misc/strongstream.cc \
 		transport/p2p.cc transport/shm.cc transport/net.cc transport/net_socket.cc transport/net_ib.cc transport/coll_net.cc \
                 collectives/sendrecv.cc collectives/all_reduce.cc collectives/all_gather.cc collectives/broadcast.cc collectives/reduce.cc collectives/reduce_scatter.cc \
-                graph/topo.cc graph/paths.cc graph/search.cc graph/connect.cc graph/rings.cc graph/trees.cc graph/collnet.cc graph/tuning.cc graph/xml.cc
+                graph/topo.cc graph/paths.cc graph/search.cc graph/connect.cc graph/rings.cc graph/trees.cc graph/collnet.cc graph/copy.cc graph/tuning.cc graph/xml.cc
 
 ##### lib files
 LIBNAME     := libnccl.so

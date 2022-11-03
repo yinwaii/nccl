@@ -85,7 +85,19 @@ struct ncclTopoGraph {
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int inter[MAXCHANNELS*2];
 };
-ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+struct ncclGraphInfo
+{
+  int pattern;
+  int nChannels;
+  int sameChannels;
+  float bwIntra;
+  float bwInter;
+  int typeIntra;
+  int typeInter;
+};
+ncclResult_t ncclTopoGraphCopy(struct ncclGraphInfo* dst, struct ncclTopoGraph* src);
+ncclResult_t ncclTopoGraphFit(struct ncclTopoGraph *dst, struct ncclGraphInfo *src);
+    ncclResult_t ncclTopoCompute(struct ncclTopoSystem *system, struct ncclTopoGraph *graph);
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs);
