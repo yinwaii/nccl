@@ -111,8 +111,6 @@ ncclResult_t initNet() {
   return ncclSuccess;
 }
 
-NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
-
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static ncclResult_t ncclInit() {
@@ -718,12 +716,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
-  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
-  if (comm->nNodes > 1 &&
-      ncclParamCollNetEnable() == 1 &&
-      collNetSupport() && collNetGraph.nChannels) {
-    NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
-  }
+  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings, &collNetGraph));
 
   free(allTopoRanks);
   free(nodesFirstRank);
@@ -768,6 +761,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down), ret, affinity_restore);
   }
 
+  int64_t ncclParamCollNetEnable();
   // Check if we can setup CollNet
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&

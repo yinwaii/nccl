@@ -4,4 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-ncclResult_t ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next);
+#ifndef __RINGS_H__
+#define __RINGS_H__
+
+ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, struct ncclTopoRanks* topoRanks);
+ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings);
+
+#endif

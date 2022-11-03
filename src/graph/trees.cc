@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "comm.h"
 #include "nccl.h"
 
 #define RANK_TO_INDEX(r) (rank > root ? rank-1 : rank)
@@ -28,7 +29,7 @@
  *    / \     / \     /  \     \
  *   1   3   5   7   9   11    13
  */
-ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
+static ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
   int up, down0, down1;
   int bit;
   for (bit=1; bit<nranks; bit<<=1) {
@@ -82,7 +83,7 @@ ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
  *    / \     / \     /  \     / \     / \     /  \
  *   1   3   5   7   9   11   2   4   6   8   10   1
  */
-ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* s1, int* d1_0, int* d1_1) {
+static ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* s1, int* d1_0, int* d1_1) {
   // First tree ... use a btree
   ncclGetBtree(nranks, rank, s0, d0_0, d0_1);
   // Second tree ... mirror or shift
@@ -102,5 +103,148 @@ ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, i
     *d1_0 = d0 == -1 ? -1 : nranks-1-d0;
     *d1_1 = d1 == -1 ? -1 : nranks-1-d1;
   }
+  return ncclSuccess;
+}
+
+static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes, int* firstRanks) {
+ for (int n=0; n<nNodes; n++) indexes[n] = ranks[firstRanks[n]];
+ return ncclSuccess;
+}
+
+static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexes, int u0, int u1) {
+  if (u0 != -1) tree0->up = indexes[u0];
+  if (u1 != -1) tree1->up = indexes[u1];
+  return ncclSuccess;
+}
+
+static ncclResult_t addRanksDown(int* down, int* indexes, int r0, int r1) {
+  int x = 0;
+  if (down[x] >= 0) x++;
+  if (down[x] >= 0) {
+    WARN("Internal error : tree already has more than one child (%d %d %d)\n", down[0], down[1], down[2]);
+    return ncclInternalError;
+  }
+  if (r0 != -1) down[x++] = indexes[r0];
+  if (r1 != -1) down[x++] = indexes[r1];
+  return ncclSuccess;
+}
+
+static ncclResult_t setTreeDown(struct ncclTree* tree0, struct ncclTree* tree1, int* indexes, int d0_0, int d0_1, int d1_0, int d1_1) {
+  NCCLCHECK(addRanksDown(tree0->down, indexes, d0_0, d0_1));
+  NCCLCHECK(addRanksDown(tree1->down, indexes, d1_0, d1_1));
+  return ncclSuccess;
+}
+
+static ncclResult_t openRing(struct ncclTree* tree, int rank, int upRank) {
+  if (tree->down[0] == upRank) tree->down[0] = -1;
+  if (rank == upRank) tree->up = -1;
+  return ncclSuccess;
+}
+
+static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* treeUpSend, int* treeDnRecv, int* treeDnSend, int* firstRanks) {
+  const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
+  int* indexesSend, *indexesRecv;
+  NCCLCHECK(ncclCalloc(&indexesSend, nNodes));
+  NCCLCHECK(ncclCalloc(&indexesRecv, nNodes));
+
+  // Compute tree depth. Not an exact value but a good approximation in most
+  // cases
+  int depth = comm->nRanks/nNodes - 1 + log2i(nNodes);
+
+  int u0, d0_0, d0_1, u1, d1_0, d1_1;
+  NCCLCHECK(ncclGetDtree(nNodes, node, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
+  for (int c=0; c<nChannels; c++) {
+     struct ncclChannel* channel0 = comm->channels+c;
+     struct ncclChannel* channel1 = channel0+nChannels;
+     NCCLCHECK(getIndexes(treeUpSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
+     NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
+     NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
+     NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
+     int root = indexesSend[node];
+     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesRecv, u0, u1));
+     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexesSend, d0_0, d0_1, d1_0, d1_1));
+     NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
+     NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
+     NCCLCHECK(openRing(&channel0->treeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
+     NCCLCHECK(openRing(&channel1->treeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
+     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexesRecv, d0_0, d0_1, d1_0, d1_1));
+     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesSend, u0, u1));
+     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
+     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
+     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c,           channel0->treeDn.up, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
+     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
+     channel0->treeUp.depth = channel1->treeUp.depth = depth;
+  }
+  free(indexesSend);
+  free(indexesRecv);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPresetTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, struct ncclTopoRanks* topoRanks) {
+  int rank = comm->rank;
+  int localRanks = comm->localRanks;
+  int nChannels = comm->nChannels;
+
+  for (int c=0; c<nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    channel->treeUp.up = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeUp.down[i] = -1;
+    channel->treeDn.up = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
+
+    int* treeIntra = treeGraph->intra+c*localRanks;
+
+    for (int i=0; i<localRanks; i++) {
+      if (treeIntra[i] == rank) {
+        int recvIndex = 0, sendIndex = treeGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
+        int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
+
+        // Tree loop always flows in the same direction. Other trees are symmetric, i.e.
+        // up/down go in reverse directions
+        int sym = treeGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
+
+        // Down tree is common
+        topoRanks->treeDnRecv[c] = treeIntra[recvIndex];
+        topoRanks->treeDnSend[c] = treeIntra[sendIndex];
+        channel->treeDn.up       = treeIntra[prev];
+        channel->treeDn.down[0]  = treeIntra[next];
+        // Up tree depends on the pattern
+        topoRanks->treeUpRecv[c] = sym ? topoRanks->treeDnSend[c] : topoRanks->treeDnRecv[c];
+        topoRanks->treeUpSend[c] = sym ? topoRanks->treeDnRecv[c] : topoRanks->treeDnSend[c];
+        channel->treeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
+        channel->treeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
+      }
+    }
+  }
+  
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
+  // Gather data from all ranks
+  int *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend;
+  int nranks = comm->nRanks;
+  int nChannels = comm->nChannels;
+  NCCLCHECK(ncclCalloc(&treeUpRecv, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeUpSend, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeDnRecv, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeDnSend, nranks*MAXCHANNELS));
+  for (int i=0; i<nranks; i++) {
+    for (int c=0; c<nChannels;c++) {
+      treeUpRecv[c*nranks+i] = allTopoRanks[i]->treeUpRecv[c];
+      treeUpSend[c*nranks+i] = allTopoRanks[i]->treeUpSend[c];
+      treeDnRecv[c*nranks+i] = allTopoRanks[i]->treeDnRecv[c];
+      treeDnSend[c*nranks+i] = allTopoRanks[i]->treeDnSend[c];
+    }
+  }
+
+  // Connect rings and trees. This should also duplicate the channels.
+  NCCLCHECK(connectTrees(comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks));
+
+  free(treeUpRecv);
+  free(treeUpSend);
+  free(treeDnRecv);
+  free(treeDnSend);
+
   return ncclSuccess;
 }
