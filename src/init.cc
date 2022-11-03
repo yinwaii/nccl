@@ -505,13 +505,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // AllGather3 - begin
-  struct ncclGraphInfo {
-    int sameChannels;
-    float speedIntra;
-    float speedInter;
-    int typeIntra;
-  };
-
   struct {
     int cudaCompCap;
     int fullCudaCompCap;
@@ -526,18 +519,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].nChannels = comm->nChannels = treeGraph.nChannels = ringGraph.nChannels =
     std::min(treeGraph.nChannels, ringGraph.nChannels);
-  allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
-  allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
-  allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
-  allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
-  allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
-  allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
-  allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
-  allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
-  allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
-  allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
-  allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
-  allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
+  NCCLCHECK(ncclTopoGraphCopy(&allGather3Data[rank].tree, &treeGraph));
+  NCCLCHECK(ncclTopoGraphCopy(&allGather3Data[rank].ring, &ringGraph));
+  NCCLCHECK(ncclTopoGraphCopy(&allGather3Data[rank].collNet, &collNetGraph));
 
   NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &allGather3Data[rank].topoRanks));
 
@@ -574,18 +558,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
     // Make sure we align all ranks so that the tuning is consistent across ranks
     treeGraph.nChannels = ringGraph.nChannels = comm->nChannels = std::min(allGather3Data[i].nChannels, comm->nChannels);
-    treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
-    treeGraph.speedIntra = std::min(allGather3Data[i].tree.speedIntra, treeGraph.speedIntra);
-    treeGraph.speedInter = std::min(allGather3Data[i].tree.speedInter, treeGraph.speedInter);
-    treeGraph.typeIntra = std::min(allGather3Data[i].tree.typeIntra, treeGraph.typeIntra);
-    ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
-    ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
-    ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
-    ringGraph.typeIntra = std::min(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
-    collNetGraph.sameChannels = std::min(allGather3Data[i].collNet.sameChannels, collNetGraph.sameChannels);
-    collNetGraph.speedIntra = std::min(allGather3Data[i].collNet.speedIntra, collNetGraph.speedIntra);
-    collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
-    collNetGraph.typeIntra = std::min(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
+    NCCLCHECK(ncclTopoGraphFit(&treeGraph, &allGather3Data[i].tree));
+    NCCLCHECK(ncclTopoGraphFit(&ringGraph, &allGather3Data[i].ring));
+    NCCLCHECK(ncclTopoGraphFit(&collNetGraph, &allGather3Data[i].collNet));
   }
 
   if (comm->nChannels < nChannelsOrig) {

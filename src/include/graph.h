@@ -88,6 +88,15 @@ struct ncclTopoRanks {
   int treeDnSend[MAXCHANNELS];
 };
 
+struct ncclGraphInfo {
+  int sameChannels;
+  float speedIntra;
+  float speedInter;
+  int typeIntra;
+};
+ncclResult_t ncclTopoGraphCopy(struct ncclGraphInfo* dst, struct ncclTopoGraph* src);
+ncclResult_t ncclTopoGraphFit(struct ncclTopoGraph* dst, struct ncclGraphInfo* src);
+
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
     struct ncclTopoRanks* topoRanks);
