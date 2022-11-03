@@ -83,3 +83,17 @@ ncclResult_t ncclTopoPresetCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
 
   return ncclSuccess;
 }
+
+ncclResult_t ncclProxySaveOpCollnetChain(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
+  struct ncclChannel *channel = &comm->channels[op->channelId];
+  NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetChain.up, op, 1, justInquire));
+  NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetChain.up, op, 0, justInquire));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySaveOpCollnetDirect(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
+  struct ncclChannel *channel = &comm->channels[op->channelId];
+  NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetDirect.out, op, 1, justInquire));
+  NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetDirect.out, op, 0, justInquire));
+  return ncclSuccess;
+}

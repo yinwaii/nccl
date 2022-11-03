@@ -5,6 +5,9 @@
  ************************************************************************/
 
 #include "comm.h"
+#include "../graph/rings.h"
+#include "../graph/trees.h"
+#include "../graph/collnets.h"
 #include "info.h"
 #include "collectives.h"
 #include "socket.h"
@@ -14,22 +17,6 @@
 #include "timer.h"
 
 #include <sys/syscall.h>
-
-enum { proxyRecv=0, proxySend=1 };
-
-static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
-  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
-
-  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
-  /* Which index in the reorganized rings should we compare root against */
-  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
-  int index = pattern == ncclPatternPipelineFrom ?
-      /*                            no recv /  no send    if root = */
-      /* bcast  */ (type == proxyRecv ?   myrank : nextrank ):
-      /* reduce */ (type == proxyRecv ? prevrank :   myrank );
-  int rank = ring->userRanks[index];
-  return (root != rank);
-}
 
 #define PROXYARGS_ALLOCATE_SIZE NCCL_MAX_OPS
 struct ncclProxyPool {
@@ -351,7 +338,7 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
   return ncclSuccess;
 }
 
-static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, struct ncclProxyOp* op, int connIndex, bool* justInquire) {
+ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, struct ncclProxyOp* op, int connIndex, bool* justInquire) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclChannelPeer* peerComm = channel->peers+peer;
@@ -380,39 +367,18 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternRingTwice:
   case ncclPatternPipelineFrom:
   case ncclPatternPipelineTo: {
-      struct ncclRing* ring = &channel->ring;
-      if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
-        NCCLCHECK(SaveProxy(channel, proxyRecv, ring->prev, op, 0, justInquire));
-      }
-      if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
-        NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0, justInquire));
-      }
+      NCCLCHECK(ncclProxySaveOpRing(comm, op, justInquire));
     } break;
   case ncclPatternTreeUp:
   case ncclPatternTreeDown:
   case ncclPatternTreeUpDown: {
-      if (op->pattern != ncclPatternTreeDown) { // Tree up
-        struct ncclTree* tree = &channel->tree;
-        for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
-          NCCLCHECK(SaveProxy(channel, proxyRecv, tree->down[i], op, 0, justInquire));
-        }
-        NCCLCHECK(SaveProxy(channel, proxySend, tree->up, op, 0, justInquire));
-      }
-      if (op->pattern != ncclPatternTreeUp) { // Tree down
-        struct ncclTree* tree = &channel->tree;
-        for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
-          NCCLCHECK(SaveProxy(channel, proxySend, tree->down[i], op, 0, justInquire));
-        }
-        NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0, justInquire));
-      }
+      NCCLCHECK(ncclProxySaveOpTree(comm, op, justInquire));
     } break;
   case ncclPatternCollnetChain: {
-      NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetChain.up, op, 1, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetChain.up, op, 0, justInquire));
+      NCCLCHECK(ncclProxySaveOpCollnetChain(comm, op, justInquire));
     } break;
   case ncclPatternCollnetDirect: {
-      NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetDirect.out, op, 1, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetDirect.out, op, 0, justInquire));
+      NCCLCHECK(ncclProxySaveOpCollnetDirect(comm, op, justInquire));
     } break;
   case ncclPatternSend:
   case ncclPatternRecv: {

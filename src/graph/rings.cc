@@ -113,3 +113,29 @@ ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* rin
 
   return ncclSuccess;
 }
+
+static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
+  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
+
+  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
+  /* Which index in the reorganized rings should we compare root against */
+  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
+  int index = pattern == ncclPatternPipelineFrom ?
+      /*                            no recv /  no send    if root = */
+      /* bcast  */ (type == proxyRecv ?   myrank : nextrank ):
+      /* reduce */ (type == proxyRecv ? prevrank :   myrank );
+  int rank = ring->userRanks[index];
+  return (root != rank);
+}
+
+ncclResult_t ncclProxySaveOpRing(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
+  struct ncclChannel *channel = &comm->channels[op->channelId];
+  struct ncclRing* ring = &channel->ring;
+  if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
+    NCCLCHECK(SaveProxy(channel, proxyRecv, ring->prev, op, 0, justInquire));
+  }
+  if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
+    NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0, justInquire));
+  }
+  return ncclSuccess;
+}

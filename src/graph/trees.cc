@@ -231,3 +231,22 @@ ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int* firstRanks, int* tr
 
   return ncclSuccess;
 }
+
+ncclResult_t ncclProxySaveOpTree(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
+  struct ncclChannel* channel = &comm->channels[op->channelId];
+  if (op->pattern != ncclPatternTreeDown) { // Tree up
+    struct ncclTree* tree = &channel->tree;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
+      NCCLCHECK(SaveProxy(channel, proxyRecv, tree->down[i], op, 0, justInquire));
+    }
+    NCCLCHECK(SaveProxy(channel, proxySend, tree->up, op, 0, justInquire));
+  }
+  if (op->pattern != ncclPatternTreeUp) { // Tree down
+    struct ncclTree* tree = &channel->tree;
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
+      NCCLCHECK(SaveProxy(channel, proxySend, tree->down[i], op, 0, justInquire));
+    }
+    NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0, justInquire));
+  }
+  return ncclSuccess;
+}
