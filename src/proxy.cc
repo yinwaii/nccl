@@ -7,25 +7,9 @@
 #include "comm.h"
 #include "info.h"
 #include "collectives.h"
-
-#define RECV 0
-#define SEND 1
-
-static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
-  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
-
-  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
-  // Which index in the reorganized rings should we compare root against */
-  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
-  int index = pattern == ncclPatternPipelineFrom ?
-      /*                            no recv /  no send    if root = */
-      /* bcast  */ (type == RECV ?   myrank : nextrank ):
-      /* reduce */ (type == RECV ? prevrank :   myrank );
-  int rank = ring->userRanks[index];
-  return (root != rank);
-}
-
-enum { proxyRecv=0, proxySend=1 };
+#include "graph/rings.h"
+#include "graph/trees.h"
+#include "graph/collnets.h"
 
 #define PROXYARGS_ALLOCATE_SIZE 32
 struct ncclProxyPool {
@@ -86,7 +70,7 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
 }
 
 template <int type>
-static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
+ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
@@ -110,33 +94,19 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
 
 ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
-    struct ncclRing* ring = &args->channel->ring;
-    if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
-    if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+    NCCLCHECK(ncclProxySaveCollRing(args, pattern, root, nranks));
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
-    // Tree up
-    struct ncclTree* tree = &args->channel->treeUp;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    NCCLCHECK(ncclProxySaveCollTreeUp(args, pattern, root, nranks));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
-    // Tree down
-    struct ncclTree* tree = &args->channel->treeDn;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    NCCLCHECK(ncclProxySaveCollTreeDn(args, pattern, root, nranks));
   }
   if (pattern == ncclPatternCollTreeUp) {
-    // CollTree up
-    struct ncclTree* tree = &args->channel->collTreeUp;
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    NCCLCHECK(ncclProxySaveCollCollNetUp(args, pattern, root, nranks));
   }
   if (pattern == ncclPatternCollTreeDown) {
-    // CollTree down
-    struct ncclTree* tree = &args->channel->collTreeDn;
-    NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    NCCLCHECK(ncclProxySaveCollCollNetDn(args, pattern, root, nranks));
   }
   return ncclSuccess;
 }

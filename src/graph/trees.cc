@@ -258,3 +258,19 @@ ncclResult_t ncclTransportSetupTree(struct ncclComm* comm, struct ncclTopoGraph*
   }
   return ncclSuccess;
 }
+
+ncclResult_t ncclProxySaveCollTreeUp(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+  // Tree up
+  struct ncclTree* tree = &args->channel->treeUp;
+  for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
+  NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySaveCollTreeDn(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+  // Tree down
+  struct ncclTree* tree = &args->channel->treeDn;
+  for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
+  NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+  return ncclSuccess;
+}

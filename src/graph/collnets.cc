@@ -229,3 +229,19 @@ ncclResult_t ncclTransportSetupCollNet(struct ncclComm* comm, struct ncclTopoGra
   }
   return ncclSuccess;
 }
+
+ncclResult_t ncclProxySaveCollCollNetUp(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+  // CollTree up
+  struct ncclTree *tree = &args->channel->collTreeUp;
+  NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
+  NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySaveCollCollNetDn(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+  // CollTree down
+  struct ncclTree *tree = &args->channel->collTreeDn;
+  NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
+  NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+  return ncclSuccess;
+}

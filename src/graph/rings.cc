@@ -171,3 +171,24 @@ ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph*
   }
   return ncclSuccess;
 }
+
+static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
+  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
+
+  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
+  // Which index in the reorganized rings should we compare root against */
+  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
+  int index = pattern == ncclPatternPipelineFrom ?
+      /*                            no recv /  no send    if root = */
+      /* bcast  */ (type == RECV ?   myrank : nextrank ):
+      /* reduce */ (type == RECV ? prevrank :   myrank );
+  int rank = ring->userRanks[index];
+  return (root != rank);
+}
+
+ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+  struct ncclRing* ring = &args->channel->ring;
+  if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
+  if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+  return ncclSuccess;
+}
