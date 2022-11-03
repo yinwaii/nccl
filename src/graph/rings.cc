@@ -146,3 +146,28 @@ ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct 
 
   return ncclSuccess;
 }
+
+static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
+  struct ncclRing* ring = &comm->channels[channelId].ring;
+  // Reorganize ranks to start with rank.
+  int shift;
+  for (shift = 0; shift<nranks; shift++) {
+    if (ringRanks[shift] == rank) {
+      break;
+    }
+  }
+  for (int i=0; i<nranks; i++) {
+    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int* rings) {
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    NCCLCHECK(setupChannel(comm, c, comm->rank, comm->nRanks, rings+c*comm->nRanks));
+    if (comm->nRanks == 1) continue;
+    NCCLCHECK(ncclTransportP2pSetup(comm, ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+  }
+  return ncclSuccess;
+}

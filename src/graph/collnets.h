@@ -3,5 +3,6 @@
 
 ncclResult_t ncclTopoPresetCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclTopoRanks* topoRanks);
 ncclResult_t ncclTopoPostsetCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph);
+ncclResult_t ncclTransportSetupCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph);
 
 #endif

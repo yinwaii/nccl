@@ -248,3 +248,13 @@ ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int* firstRanks, struct 
 
   return ncclSuccess;
 }
+
+ncclResult_t ncclTransportSetupTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph) {
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    if (comm->nRanks == 1) continue;
+    NCCLCHECK(ncclTransportP2pSetup(comm, treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
+    NCCLCHECK(ncclTransportP2pSetup(comm, treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+  }
+  return ncclSuccess;
+}
