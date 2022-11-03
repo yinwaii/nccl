@@ -8,7 +8,7 @@
 #include "graph.h"
 #include "trees.h"
 #include "rings.h"
-#include "collnet.h"
+#include "collnets.h"
 #include "topo.h"
 
 /******************************************************************/
