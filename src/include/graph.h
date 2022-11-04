@@ -53,9 +53,10 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Split tree (send/recv from different ranks) flowing in both directions
 #define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
+#define NCCL_TOPO_PATTERN_BUTTERFLY 5       // Butterfly
 struct ncclTopoGraph {
   // Input / output
-  int id; // ring : 0, tree : 1, collnet : 2
+  int id; // ring : 0, tree : 1, collnet : 2, butterfly: 3
   int pattern;
   int crossNic;
   int collNet;
@@ -86,10 +87,14 @@ struct ncclTopoRanks {
   int treeUpSend[MAXCHANNELS];
   int treeDnRecv[MAXCHANNELS];
   int treeDnSend[MAXCHANNELS];
+  //butterfly - lyz
+  int butterflyRecv[MAXCHANNELS];
+  int butterflySend[MAXCHANNELS];
 };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
+    struct ncclTopoGraph* butterflyGraph,
     struct ncclTopoRanks* topoRanks);
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
@@ -97,7 +102,8 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
 
 ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank);
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph);
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, 
+  struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph, struct ncclTopoGraph* butterflyGraph);
 #include "info.h"
 ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time);
 

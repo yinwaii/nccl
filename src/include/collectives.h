@@ -7,6 +7,9 @@
 #ifndef NCCL_COLLECTIVES_H_
 #define NCCL_COLLECTIVES_H_
 
+//butterfly - lyz tmp
+#define NCCL_NUM_ALGORITHMS_TMP 3
+
 #define FUNC_INDEX_P2P 0
 #define FUNC_INDEX(coll, redop, dtype, al, pr) (1+(((((coll)*ncclNumOps + (redop))*ncclNumTypes) + (dtype))*NCCL_NUM_ALGORITHMS+(al))*NCCL_NUM_PROTOCOLS+(pr))
 
@@ -29,7 +32,8 @@
 #define DECL_COLL3(coll, op, dtype) \
   DECL_COLL4(coll##Ring, op, dtype) \
   DECL_COLL4(coll##Tree, op, dtype) \
-  DECL_COLL4(coll##CollNet, op, dtype)
+  DECL_COLL4(coll##CollNet, op, dtype) \
+  DECL_COLL4(coll##Butterfly, op, dtype) 
 
 #define DECL_COLL2(coll, op) \
   DECL_COLL3(coll, op, i8) \

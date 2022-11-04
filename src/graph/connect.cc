@@ -8,13 +8,14 @@
 #include "graph.h"
 #include "trees.h"
 #include "rings.h"
-
+#include "butterfly.h"
 /******************************************************************/
 /********************* Internode connection ***********************/
 /******************************************************************/
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph, 
+    struct ncclTopoGraph* butterflyGraph, 
     struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
@@ -35,8 +36,22 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     int* ringIntra = ringGraph->intra+c*localRanks;
     int* treeIntra = treeGraph->intra+c*localRanks;
     int* collNetIntra = collNetGraph->intra+c*localRanks;
+    // butterfly - lyz
+    int* butterflyIntra = butterflyGraph->intra+c*localRanks;
+    //channel->butterfly.prev = channel->butterfly.next = -1;
+
 
     for (int i=0; i<localRanks; i++) {
+      //butterfly - lyz
+      if (butterflyIntra[i] == rank) {
+        topoRanks->butterflyRecv[c] = butterflyIntra[0];
+        topoRanks->butterflySend[c] = butterflyIntra[localRanks-1];
+        //channel->butterfly.prev = (i == 0) ? -1 : butterflyIntra[i-1];
+        //channel->butterfly.next = (i == localRanks-1) ? -1 : butterflyIntra[i+1];
+        //topoRanks->butterflyPrev[c] = channel->butterfly.prev;
+        //topoRanks->butterflyNext[c] = channel->butterfly.next;
+      }
+
       if (ringIntra[i] == rank) {
         topoRanks->ringRecv[c] = ringIntra[0];
         topoRanks->ringSend[c] = ringIntra[localRanks-1];
@@ -114,6 +129,83 @@ static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ring
   }
   return ncclSuccess;
 }
+
+
+//butterfly - lyz
+static ncclResult_t connectButterfly(struct ncclComm* comm, int* butterflyRecv, int* butterflySend, int* firstRanks) {
+  int nChannels = comm->nChannels;
+  int nNodes = comm->nNodes;
+  int nRanks = comm->nRanks;
+  int myRank = comm->rank;
+
+  for (int c=0; c<nChannels; c++) {
+    //not used for now
+    int* recv = butterflyRecv+c*comm->nRanks;
+    int* send = butterflySend+c*comm->nRanks;
+
+    struct ncclChannel* channel = comm->channels+c;
+    channel->butterfly.peerCount = 0;
+    channel->butterfly.lastoneCompressed = 0;
+    channel->butterfly.myRank = myRank;
+
+    //algorithm
+    if (nRanks == 1) {
+      channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank;
+      return ncclSuccess;
+    }
+
+    int adjsize = 1;
+    while (adjsize <= nRanks) adjsize <<= 1;
+    adjsize >>= 1;
+
+    int newRank = myRank;
+    //cases for nRanks non-power of 2
+    int extra_ranks = nRanks - adjsize;
+    if (myRank < (2 * extra_ranks)) {
+      if ((myRank % 2) == 0) {
+        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank + 1;
+        newRank = -1;
+      }
+      else {
+        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank - 1;
+        newRank >>= 1;
+      }
+    }
+    else{
+      newRank -= extra_ranks;
+    }
+
+    //determine peerRanks
+    for (int dist = 1; dist < adjsize; dist <<= 1) {
+      if (newRank < 0) break;
+      int newRemote = newRank ^ dist;
+      int remote = (newRemote < extra_ranks)? (newRemote * 2 + 1):(newRemote + extra_ranks);
+      channel->butterfly.peerRanks[channel->butterfly.peerCount++] = remote;
+    }
+
+    //deal with those compressed ranks
+    if (myRank < 2 * extra_ranks) {
+      channel->butterfly.lastoneCompressed = 1;
+      if ((myRank % 2) == 0) {
+        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank + 1;
+      }
+      else {
+        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank - 1;
+      }
+    }
+
+    //char line[1024];
+    for (int p = 0; p < channel->butterfly.peerCount; p++) {
+      ///int offset = strlen(line);
+      //sprintf(line+offset, "%2d ", channel->butterfly.peerRanks[p]);
+      INFO(NCCL_INIT,"Butterfly Rank %d, communicates with : %d (%d)", myRank, channel->butterfly.peerRanks[p], channel->butterfly.peerCount);
+    }
+    //INFO(NCCL_INIT, "Butterfly Rank %d, communicates with : %s", myRank, line);
+  }
+  return ncclSuccess;
+}
+
+
 
 static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes, int* firstRanks) {
  for (int n=0; n<nNodes; n++) indexes[n] = ranks[firstRanks[n]];
@@ -255,7 +347,7 @@ int ncclMaxNchannels() {
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings) {
   // Gather data from all ranks
-  int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend;
+  int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend,*butterflyRecv, *butterflySend;
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
   NCCLCHECK(ncclCalloc(&ringRecv, nranks*MAXCHANNELS));
@@ -266,6 +358,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
   NCCLCHECK(ncclCalloc(&treeUpSend, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeDnRecv, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeDnSend, nranks*MAXCHANNELS));
+  //butterfly - lyz
+  NCCLCHECK(ncclCalloc(&butterflyRecv, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&butterflySend, nranks*MAXCHANNELS));
   for (int i=0; i<nranks; i++) {
     for (int c=0; c<nChannels;c++) {
       ringRecv[c*nranks+i] = allTopoRanks[i]->ringRecv[c];
@@ -276,16 +371,23 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
       treeUpSend[c*nranks+i] = allTopoRanks[i]->treeUpSend[c];
       treeDnRecv[c*nranks+i] = allTopoRanks[i]->treeDnRecv[c];
       treeDnSend[c*nranks+i] = allTopoRanks[i]->treeDnSend[c];
+      //butterfly - lyz
+      butterflyRecv[c*nranks+i] = allTopoRanks[i]->butterflyRecv[c];
+      butterflySend[c*nranks+i] = allTopoRanks[i]->butterflySend[c];
     }
   }
 
+  // butterfly - lyz [skip ring connection for now]
   // Connect rings and trees. This should also duplicate the channels.
-  NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext, firstRanks));
-  NCCLCHECK(connectTrees(comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks));
+  //NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext, firstRanks));
+  //NCCLCHECK(connectTrees(comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks));
+  //butterfly - lyz
+  NCCLCHECK(connectButterfly(comm, butterflyRecv, butterflySend, firstRanks));
 
   // Duplicate ringPrev/ringNext for ncclBuildRing
   memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
   memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
+
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
@@ -301,8 +403,11 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
   }
   nChannels = comm->nChannels = c;
 
+  // lyz - skip ring
   // Create rings array and check all is fine
-  NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
+  //NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
+  //butterfly - lyz
+  //NCCLCHECK(ncclBuildButterfly(nChannels, wings, comm->rank, comm->nRanks, butterflyPrev, butterflyNext));
 
   free(ringRecv);
   free(ringSend);
@@ -312,6 +417,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
   free(treeUpSend);
   free(treeDnRecv);
   free(treeDnSend);
+  //butterfly - lyz
+  free(butterflyRecv);
+  free(butterflySend);
 
   return ncclSuccess;
 }

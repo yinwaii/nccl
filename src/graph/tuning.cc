@@ -73,22 +73,23 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 // ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce
 static const double ll128MaxBwPerCh[NCCL_NUM_FUNCTIONS] = { 18.8, 12.0, 18.3, 15.2, 16.7 };
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, 
+  struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph, struct ncclTopoGraph* butterflyGraph) {
   int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
+  comm->maxThreads[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_SIMPLE] =comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
   comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_LL] =
+  comm->maxThreads[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_LL] =comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_LL] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128] =
+  comm->maxThreads[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_LL128] =comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128] =
     getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
 
   if (comm->nRanks <= 1) return ncclSuccess;
 
   int compCap80 = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
   float ppn = (float)comm->nRanks / comm->nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
-  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
+  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph, butterflyGraph };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = comm->nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
@@ -102,7 +103,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       comm->nNodes;
 
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
+      // butterfly - lyz
+      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING && a != NCCL_ALGO_BUTTERFLY) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
@@ -112,6 +114,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (compCap80) busBw = std::min(busBw, 235.0f);
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
+        // butterfly - lyz
+        if (a == NCCL_ALGO_BUTTERFLY && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
+        if (a == NCCL_ALGO_BUTTERFLY && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
+
         double maxTreeBw = comm->nNodes > 2 ?
           compCap80 && p == NCCL_PROTO_LL128 ? 105.0 : 80.0 :
           compCap80 && p == NCCL_PROTO_LL128 ? 130.0 : 110.0;
@@ -123,14 +129,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
 
         // Convert bus BW to algorithm BW
-        float ratio = (a != NCCL_ALGO_RING) ? .5 : (1.0 * comm->nRanks) / nsteps;
+        //butterfly - lyz
+        float ratio = (a != NCCL_ALGO_RING && a != NCCL_ALGO_BUTTERFLY) ? .5 : (1.0 * comm->nRanks) / nsteps;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
         comm->latencies[coll][a][p] = baseLat[a][p];
         float intraLat = hwLat[intraHw[a]][a][p];
         float interLat = hwLat[NCCL_HW_NET][a][p];
         if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
-        if (a == NCCL_ALGO_RING) {
+        if (a == NCCL_ALGO_RING || a == NCCL_ALGO_BUTTERFLY) {
           float lat = hwLat[hw[a]][a][p];
           if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
             if (ringGraph->sameChannels) {
@@ -156,7 +163,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1 };
+  // butterfly - lyz
+  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1};
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) {
@@ -215,6 +223,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_THREAD_THRESHOLD;
   }
   comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
+  //butterfly - lyz
+  comm->threadThresholds[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_LL] *= comm->nRanks;
 
   // Override defaults with user env
   char* str = getenv("NCCL_THREAD_THRESHOLDS");
@@ -229,7 +239,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     }
   }
 
-  INFO(NCCL_INIT, "threadThresholds %ld/%ld/%ld | %ld/%ld/%ld | %ld/%ld/%ld",
+  //butterfly - lyz
+  INFO(NCCL_INIT, "threadThresholds %ld/%ld/%ld | %ld/%ld/%ld | %ld/%ld/%ld | %ld/%ld/%ld",
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128],
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE],
@@ -238,7 +249,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE],
       comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL],
       comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128],
-      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE]);
+      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE],
+      comm->threadThresholds[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_LL],
+      comm->threadThresholds[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_LL128],
+      comm->threadThresholds[NCCL_ALGO_BUTTERFLY][NCCL_PROTO_SIMPLE]);
   return ncclSuccess;
 }
 
@@ -254,6 +268,7 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int proto
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {
+    INFO(NCCL_INIT,"Zero bandwidth algo%d %f %f! p: %d",algorithm,bw,lat,protocol);
     *time = -1.0; return ncclSuccess;
   }
   int logSize = log2i(info->nBytes>>6);
@@ -261,5 +276,6 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int proto
   if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1
       && info->coll == ncclCollAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
   *time = lat + (info->nBytes) / (1000 * bw);
+  INFO(NCCL_INIT,"Long time algo%d %f %f! p: %d",algorithm,bw,lat,protocol);
   return ncclSuccess;
 }

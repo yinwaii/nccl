@@ -15,10 +15,11 @@
 typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollSendRecv} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
-#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
+#define NCCL_ALGO_BUTTERFLY 3
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
@@ -100,6 +101,9 @@ struct ncclConnector {
   void* transportResources; // Host-side resources
   struct ncclConnInfo conn;
   struct ncclComm *comm;
+  //switch - lyz
+  //add rank info to identify each peer when sending packets
+  int peerRank;
 };
 
 struct ncclRing {
@@ -116,10 +120,19 @@ struct ncclRing {
 
 
 #define NCCL_MAX_TREE_ARITY 3
+#define NCCL_MAX_BUTTERFLY_STEPS 10
 struct ncclTree {
   int depth;
   int up;
   int down[NCCL_MAX_TREE_ARITY];
+};
+
+// butterfly - lyz
+struct ncclButterfly {
+  int myRank;
+  int peerCount;
+  int lastoneCompressed;
+  int peerRanks[NCCL_MAX_BUTTERFLY_STEPS];
 };
 
 struct ncclPeer {
@@ -183,6 +196,7 @@ struct ncclChannel {
       struct ncclTree treeDn;
       struct ncclTree collTreeUp;
       struct ncclTree collTreeDn;
+      struct ncclButterfly butterfly;
 
       int id;
 

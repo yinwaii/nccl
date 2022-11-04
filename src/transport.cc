@@ -44,6 +44,9 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     int peer = peerRecv[i];
     if (peer == -1 || peer >= comm->nRanks) continue;
     conn = &channel->peers[peer].recv;
+    //switch - lyz
+    //add rank info
+    conn->peerRank = peer;
     if (conn->connected) { ++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
     NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
@@ -53,6 +56,9 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     int peer = peerSend[i];
     if (peer == -1 || peer >= comm->nRanks) continue;
     conn = &channel->peers[peer].send;
+    //switch - lyz
+    //add rank info
+    conn->peerRank = peer;
     if (conn->connected) { ++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
     NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));

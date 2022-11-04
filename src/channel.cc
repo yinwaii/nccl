@@ -7,6 +7,7 @@
 #include "channel.h"
 #include "param.h"
 
+//butterfly - lyz add 
 ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   struct ncclChannel* channel = comm->channels+channelid;
   if (channel->id != -1) return ncclSuccess;
@@ -15,6 +16,9 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   // Ring index to user rank table.
   NCCLCHECK(ncclCudaCalloc(&channel->ring.devUserRanks, comm->nRanks));
   NCCLCHECK(ncclCalloc(&channel->ring.userRanks, comm->nRanks));
+  //butterfly
+  //NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devUserRanks, comm->nRanks));
+  //NCCLCHECK(ncclCalloc(&channel->butterfly.userRanks, comm->nRanks));
 
   // Communication structures with peers.
   NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks+1)); // The extra one rank is for collnet root (i.e. network)

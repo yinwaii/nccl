@@ -38,6 +38,13 @@ struct ncclProxyArgs {
   pthread_mutex_t mutex;
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
+
+  //switch - lyz
+  //switch state
+  int switch_state;
+
+  // lyz - segmented 
+  int count; //total amount of data to send
 };
 
 struct ncclProxyPool;
@@ -58,7 +65,7 @@ enum proxyMode {
   proxyTo = 2
 };
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks);
+ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks, ncclFunc_t op_type);
 ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);

@@ -36,7 +36,7 @@ ncclResult_t PtrCheck(void* ptr, const char* opname, const char* ptrname) {
 ncclResult_t ArgsCheck(struct ncclInfo* info) {
   // First, the easy ones
   if (info->root < 0 || info->root >= info->comm->nRanks) {
-    WARN("%s : invalid root %d (root should be in the 0..%d range)", info->opName, info->root, info->comm->nRanks);
+    INFO(NCCL_INIT,"%s : invalid root %d (root should be in the 0..%d range)", info->opName, info->root, info->comm->nRanks);
     return ncclInvalidArgument;
   }
   if (info->datatype < 0 || info->datatype >= ncclNumTypes) {

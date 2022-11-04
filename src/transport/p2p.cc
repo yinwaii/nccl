@@ -49,7 +49,8 @@ static int busIdToCudaDev(int64_t busId) {
 /* Determine if two peers can communicate through p2p */
 ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   // Rule out different nodes
-  if (info1->hostHash != info2->hostHash) {
+  if (true) { //info1->hostHash != info2->hostHash) {
+    printf("Forced to skip P2P \n");
     *ret = 0;
     return ncclSuccess;
   }

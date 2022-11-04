@@ -7,6 +7,7 @@
 #include "comm.h"
 #include "info.h"
 #include "collectives.h"
+#include <assert.h>
 
 #define RECV 0
 #define SEND 1
@@ -85,8 +86,9 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
   pthread_mutex_unlock(&state->mutex);
 }
 
+// lyz - segmented
 template <int type>
-static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
+static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args, int inconsistent_nsteps = -1) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
@@ -104,11 +106,16 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   op->connector = connector;
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
+  // lyz - segmented
+  if (inconsistent_nsteps > 0) op->nsteps = inconsistent_nsteps;
   ProxyAppend(connector, op);
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks, ncclFunc_t op_type) {
+  //lyz - butterfly - broadcast
+  //args->root = root;
+  INFO(NCCL_INIT,"enqueue coll: %d : %d", pattern, op_type);
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
     struct ncclRing* ring = &args->channel->ring;
     if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
@@ -137,6 +144,162 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root
     struct ncclTree* tree = &args->channel->collTreeDn;
     NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
     NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+  }
+  //butterfly - lyz
+  if (pattern == ncclPatternButterfly) {
+    if (op_type == ncclCollAllReduce) {
+      //printf("Save proxy: butterfly\n");
+      struct ncclButterfly* butterfly = &args->channel->butterfly;
+      int myRank = butterfly->myRank;
+      
+      // lyz - segmented - different nsteps for different peers
+      int commSize = args->count;
+      //int commOffset = 0;
+
+      int peerSteps[1024];
+      int reducedPeerRanks[1024];
+      int reducedPeerCount = 0;
+
+      for (int p = 0; p < butterfly->peerCount; p++) {
+        int peerRank = butterfly->peerRanks[p];
+        int nsteps = 0;
+        if (p == (butterfly->peerCount - 1) && butterfly->lastoneCompressed == 1 || p == 0 && butterfly->lastoneCompressed == 1) continue;
+        int halfSize = commSize/2;
+
+        /*calculate steps*/
+        struct ncclPeer* peerComm = args->channel->peers+peerRank;
+        struct ncclConnector* connector = &peerComm->recv;
+
+        int stepSize   = connector->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+        int chunkSteps = ALLREDUCE_CHUNKSTEPS;
+        //int sliceSteps = ALLREDUCE_SLICESTEPS;
+        int chunkSize  = stepSize*chunkSteps;
+        int nchunksPerLoop = 1;
+        int nstepsPerLoop = 1;
+
+	printf("Enqueue  size: %d\n", commSize);
+
+        int nLoops = (int)(DIVUP(halfSize, (((size_t)(connector->comm->nChannels))*nchunksPerLoop*chunkSize)));
+        nsteps += nstepsPerLoop * nLoops * chunkSteps;
+        nsteps += nstepsPerLoop * nLoops * chunkSteps;
+
+        commSize = halfSize;
+        peerSteps[reducedPeerCount] = nsteps;
+        reducedPeerRanks[reducedPeerCount] = peerRank;
+        reducedPeerCount++;
+      }
+      /** Enqueue proxies **/
+      if (butterfly->lastoneCompressed == 1) {
+        NCCLCHECK(SaveProxy<proxySend>(butterfly->peerRanks[0], args));
+        NCCLCHECK(SaveProxy<proxyRecv>(butterfly->peerRanks[0], args));
+      }
+      for (int p = 0; p < reducedPeerCount; p++) {
+        NCCLCHECK(SaveProxy<proxySend>(reducedPeerRanks[p], args, peerSteps[p]));
+        NCCLCHECK(SaveProxy<proxyRecv>(reducedPeerRanks[p], args, peerSteps[p]));
+      }
+      /*
+      int cc =  butterfly->peerCount;
+      if (butterfly->lastoneCompressed == 1) cc--;
+       for (int i=0; i< cc; i++) {
+        NCCLCHECK(SaveProxy<proxySend>(butterfly->peerRanks[i], args));
+        NCCLCHECK(SaveProxy<proxyRecv>(butterfly->peerRanks[i], args));
+       }
+       */
+    } // lyz - HD broad cast
+    else{
+      INFO(NCCL_INIT,"Butterfly broadcast !!!!");
+      //determine the peer ranks
+      int recvPeerRank = -1;
+      int sendPeerRanks[32];
+      int sendPeerCount = 0;
+
+      int nRanks = nranks;
+      int adjsize = 1;
+      while (adjsize <= nRanks) adjsize <<= 1;
+      adjsize >>= 1;
+
+      int myRank = args->channel->butterfly.myRank;
+      int myNewRank = myRank;
+
+      int rootRank = root;
+      int rootNewRank = root;
+
+      //cases for nRanks non-power of 2
+      int extra_ranks = nRanks - adjsize;
+      if (myRank < (2 * extra_ranks)) {
+      if ((myRank % 2) == 0) myNewRank = -1;
+      else myNewRank >>= 1;
+      }
+      else myNewRank -= extra_ranks;
+                    /***root***/
+      if (rootRank < (2 * extra_ranks)) {
+      if ((rootRank % 2) == 0){  //root is in extra ranks
+        if (myRank == rootRank) {
+          sendPeerRanks[sendPeerCount++] = rootRank + 1;
+        }
+        if (myRank == rootRank + 1) recvPeerRank = rootRank;
+      }
+      rootNewRank >>= 1;
+      }
+      else rootNewRank -= extra_ranks;
+      /***root***/
+
+
+      int roundStepSize = adjsize/2;
+      //find the recv peer
+      if (myNewRank == -1) {
+          if (myRank != rootRank) recvPeerRank = myRank + 1; // no send peer
+          roundStepSize = 0;
+      }
+      else{
+      //starting from the root to my rank
+      if (myNewRank != rootNewRank) {
+        int currentRank = rootNewRank;
+        while (currentRank != myNewRank) {
+          int myRankLoc = myNewRank/roundStepSize;
+          int currentRankLoc = currentRank/roundStepSize;
+
+          if ( myRankLoc > currentRankLoc){
+                  if ((currentRank + roundStepSize) == myNewRank) recvPeerRank = currentRank;
+                  currentRank += roundStepSize;
+          }
+          if ( myRankLoc < currentRankLoc){
+                  if ((currentRank - roundStepSize) == myNewRank) recvPeerRank = currentRank;
+                  currentRank -= roundStepSize;
+          }
+          roundStepSize >>= 1;
+        }
+        assert(recvPeerRank != -1);
+        recvPeerRank = (recvPeerRank < extra_ranks)? (recvPeerRank * 2 + 1):(recvPeerRank + extra_ranks);
+      }
+      }
+
+      //remaining are send peers
+      while (roundStepSize > 0) {
+        int sendPeerRank;
+        int loc = (myNewRank)%(roundStepSize*2);
+        if ( (loc+1) > roundStepSize) sendPeerRank= myNewRank - roundStepSize;
+        else sendPeerRank = myNewRank + roundStepSize;
+        sendPeerRank = (sendPeerRank < extra_ranks)? (sendPeerRank * 2 + 1):(sendPeerRank + extra_ranks);
+        sendPeerRanks[sendPeerCount++] = sendPeerRank;
+        roundStepSize >>=1;
+      }
+      if (myNewRank != -1 && myNewRank < extra_ranks && (myRank - 1) != rootRank) sendPeerRanks[sendPeerCount++] = (myRank - 1);
+
+
+      //check
+      if (myRank == rootRank) assert(recvPeerRank == -1);
+      INFO(NCCL_INIT,"Butterfly broadcast %d, recv from : %d", myRank, recvPeerRank);
+      for (int p = 0; p < sendPeerCount; p++) {
+        INFO(NCCL_INIT,"Butterfly broadcast %d, send to : %d (%d)", myRank, sendPeerRanks[p], sendPeerCount);
+      }
+
+      //enqueue all the proxies
+      if (recvPeerRank > -1) NCCLCHECK(SaveProxy<proxyRecv>(recvPeerRank, args));
+      for (int i=0; i< sendPeerCount; i++) {
+        NCCLCHECK(SaveProxy<proxySend>(sendPeerRanks[i], args));
+      }
+    }
   }
   return ncclSuccess;
 }

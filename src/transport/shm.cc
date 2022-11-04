@@ -38,6 +38,12 @@ NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 /* Determine two peers can communicate with SHM */
 ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 0;
+  /*
+  if (true) {
+    printf("Forced to skip shm. \n");
+    return ncclSuccess;
+  }
+  */
 
   if (ncclParamShmDisable() == 1) return ncclSuccess;
 

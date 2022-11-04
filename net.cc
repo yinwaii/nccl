@@ -218,25 +218,15 @@ ncclResult_t netRecvFree(void* transportResources) {
 }
 
 //switch - lyz
-#define MAX_SWITCH_RANKS 64
-static ncclResult_t switchRoutingToRank(int myRank, int peerRank) {
-
-  return ncclSuccess;
-  
+static ncclResult_t switchRouting() {
   //real logic - to do
 
   //fake switch
   //system("ibportstate 5 2 disable"); // turn down the IB NIC
   //system("ibportstate 5 2 -C mlx4_0 -P 2 enable"); // turn on the IB NIC
-  const char* ipAddr[MAX_SWITCH_RANKS] = {"192.168.18.2","192.168.18.3","192.168.18.4","192.168.18.5"};
-  char command[1024];
-  sprintf(command, "wget -q \"http://192.168.18.1:5000/switch?src=%s&dst=%s\"", ipAddr[myRank], ipAddr[peerRank]);
-  //if (myRank == 0 ) {
-  INFO(NCCL_INIT, "Switch: %s", command);
-  //}
-  system(command);
   return ncclSuccess;
 }
+
 
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
@@ -316,7 +306,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         } else if (args->tail < *recvTail) {
           //switch - lyz
           if (args->switch_state == 0){
-            switchRoutingToRank(args->connector->comm->rank, args->connector->peerRank);
+            switchRouting();
             args->switch_state = 1;
             //then do the first send
             // Send through network
@@ -332,7 +322,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             }
 
           }
-          else if (args->switch_state == 1) {
+          else if (args->switch_state == 2) {
             // Send through network
             if (sizesFifo[buffSlot] != -1) {
               NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], mhandle, args->requests+buffSlot));
@@ -353,9 +343,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
         if (done) {
           //switch - lyz
-          //if (args->switch_state == 1) {
-          //  args->switch_state = 2;
-          //}
+          if (args->switch_state == 1) {
+            args->switch_state = 2;
+          }
           args->head += args->sliceSteps;
           resources->sendMem->head = args->head;
           args->idle = 0;
@@ -399,7 +389,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         int buffSlot = args->tail%NCCL_STEPS;
         int sliceSize = stepSize * args->sliceSteps;
 	//printf("Opcount %d: Doing NetRecv\n", args->opCount);
-        //printf("Step size: %d , sliceSteps: %d \n",stepSize, sliceSize);
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));
         //printf("Opcount %d: NetRecv Done\n", args->opCount);
 	if (args->requests[buffSlot] != NULL) {
@@ -410,7 +399,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       if (args->tail > args->head) {
         int buffSlot = args->head%NCCL_STEPS;
         int done, size;
-        NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
+        NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size ));
         if (done) {
           args->head += args->sliceSteps;
           if (args->protocol == NCCL_PROTO_SIMPLE) {
@@ -425,7 +414,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       resources->step = args->end;
       args->idle = 0;
       args->state = ncclProxyOpNone;
-      //printf("\nOpcount %d: head Done =\n", args->opCount);
+      printf("\nOpcount %d: Done =\n", args->opCount);
     }
     if (args->head > args->end){
 	    printf("\nOpcount %d: Doing nothing >\n", args->opCount);

@@ -38,7 +38,7 @@ std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
 
 const char* ncclFuncStr[NCCL_NUM_FUNCTIONS] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNet" };
+const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNet","Butterfly"};
 const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
@@ -263,6 +263,8 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring.devUserRanks, comm->channels[r].ring.userRanks, comm->nRanks));
   }
 
+
+
   // Duplicate the dev comm on the device
   NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
   NCCLCHECK(ncclCudaMemcpy(comm->devComm, &comm->hostDevComm, 1));
@@ -301,6 +303,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   return ncclSuccess;
 }
 
+//butterfly - lyz
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
@@ -316,8 +319,42 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   for (int i=0; i<nranks; i++) {
     ring->userRanks[i] = ringRanks[(i+shift)%nranks];
   }
+  /*
+  struct ncclButterfly* butterfly = &comm->channels[channelId].butterfly;
+  // Reorganize ranks to start with rank.
+  int shift;
+  for (shift = 0; shift<nranks; shift++) {
+    if (wingRanks[shift] == rank) {
+      break;
+    }
+  }
+  for (int i=0; i<nranks; i++) {
+    butterfly->userRanks[i] = wingRanks[(i+shift)%nranks];
+  }
+  */
   return ncclSuccess;
 }
+
+//butterfly - lyz
+/*
+static ncclResult_t setupChannel_bt(struct ncclComm* comm, int channelId, int rank, int nranks, int* wingRanks) {
+  TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
+  NCCLCHECK(initChannel_bt(comm, channelId));
+
+  struct ncclButterfly* butterfly = &comm->channels[channelId].butterfly;
+  // Reorganize ranks to start with rank.
+  int shift;
+  for (shift = 0; shift<nranks; shift++) {
+    if (wingRanks[shift] == rank) {
+      break;
+    }
+  }
+  for (int i=0; i<nranks; i++) {
+    butterfly->userRanks[i] = wingRanks[(i+shift)%nranks];
+  }
+  return ncclSuccess;
+}
+*/
 
 void* waitForNonNullPtr(void* p) {
   volatile void** ptr = (volatile void**) p;
@@ -620,9 +657,22 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
 
+
+  // Butterfly algorithm - lyz
+  struct ncclTopoGraph butterflyGraph;
+  butterflyGraph.id = 3;
+  butterflyGraph.pattern = NCCL_TOPO_PATTERN_BUTTERFLY;
+  butterflyGraph.collNet = 0;
+  butterflyGraph.crossNic = ncclParamCrossNic();
+  butterflyGraph.minChannels = 1;
+  butterflyGraph.maxChannels = MAXCHANNELS/2;
+  NCCLCHECK(ncclTopoCompute(comm->topo, &butterflyGraph));
+  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &butterflyGraph));
+
+
   if (comm->rank == ncclParamGraphDumpFileRank()) {
-    struct ncclTopoGraph* graphs[3] = { &ringGraph, &treeGraph, &collNetGraph };
-    NCCLCHECK(ncclTopoDumpGraphs(comm->topo, 3, graphs));
+    struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &collNetGraph, &butterflyGraph };
+    NCCLCHECK(ncclTopoDumpGraphs(comm->topo, 4, graphs));
   }
 
   // AllGather3 - begin
@@ -633,6 +683,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int typeIntra;
   };
 
+  // add butterfly - lyz
   struct {
     int cudaCompCap;
     int fullCudaCompCap;
@@ -640,13 +691,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclGraphInfo tree;
     struct ncclGraphInfo ring;
     struct ncclGraphInfo collNet;
+    struct ncclGraphInfo butterfly;
     struct ncclTopoRanks topoRanks;
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
-  allGather3Data[rank].nChannels = comm->nChannels = treeGraph.nChannels = ringGraph.nChannels =
+  allGather3Data[rank].nChannels = comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = butterflyGraph.nChannels =
     std::min(treeGraph.nChannels, ringGraph.nChannels);
+  allGather3Data[rank].nChannels = comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = butterflyGraph.nChannels =
+    std::min(comm->nChannels, butterflyGraph.nChannels);
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
   allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
   allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
@@ -659,8 +713,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
   allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
   allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
+  //butterfly info - lyz
+  allGather3Data[rank].butterfly.sameChannels = butterflyGraph.sameChannels;
+  allGather3Data[rank].butterfly.speedIntra = butterflyGraph.speedIntra;
+  allGather3Data[rank].butterfly.speedInter = butterflyGraph.speedInter;
+  allGather3Data[rank].butterfly.typeIntra = butterflyGraph.typeIntra;
 
-  NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &allGather3Data[rank].topoRanks));
+  NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &butterflyGraph, &allGather3Data[rank].topoRanks));
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
@@ -707,6 +766,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     collNetGraph.speedIntra = std::min(allGather3Data[i].collNet.speedIntra, collNetGraph.speedIntra);
     collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
     collNetGraph.typeIntra = std::min(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
+    //butterfly: the consistency is already asured if we have fixed topo - lyz
+    ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
+    ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
+    ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
+    ringGraph.typeIntra = std::min(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
   }
 
   if (comm->nChannels < nChannelsOrig) {
@@ -717,6 +781,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
+
+  // butterfly - lyz (necessary?)
+  //int *wings;
+  //NCCLCHECK(ncclCalloc(&wings, nranks*MAXCHANNELS));
 
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
   if (comm->nNodes > 1 &&
@@ -733,7 +801,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
 
-  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
+  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph, &butterflyGraph));
 
   char line[1024];
   line[0]='\0';
@@ -762,10 +830,26 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, affinity_restore);
+    //butterfly - lyz
+    //NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, wings+c*nranks), ret, affinity_restore);
     if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next), ret, affinity_restore);
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up), ret, affinity_restore);
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down), ret, affinity_restore);
+    
+    // lyz - skip ring connection
+    //NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next), ret, affinity_restore);
+    
+    //butterfly - lyz
+    INFO(NCCL_INIT, "Setting up butterfly connection ...");
+    if (channel->butterfly.lastoneCompressed == 0) {
+      NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &butterflyGraph, channel, channel->butterfly.peerCount, channel->butterfly.peerRanks, channel->butterfly.peerCount, channel->butterfly.peerRanks), ret, affinity_restore);
+    }
+    else {
+      NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &butterflyGraph, channel, channel->butterfly.peerCount - 1, channel->butterfly.peerRanks, channel->butterfly.peerCount - 1, channel->butterfly.peerRanks), ret, affinity_restore);
+    }
+    INFO(NCCL_INIT, "Butterfly connection established!");
+
+    // lyz - skip tree connection
+    //NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up), ret, affinity_restore);
+    //NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down), ret, affinity_restore);
   }
 
   // Check if we can setup CollNet
@@ -794,6 +878,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
   free(connect);
   free(rings);
+  //butterfly - lyz
+  //free(wings);
 
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
