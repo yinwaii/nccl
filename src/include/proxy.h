@@ -39,6 +39,7 @@ struct ncclProxyArgs {
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
 
+  // 光开关 样机 快速光切换
   //switch - lyz
   //switch state
   int switch_state;
