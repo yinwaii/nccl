@@ -6,5 +6,6 @@ ncclResult_t ncclTopoPostsetCollNet(struct ncclComm* comm, struct ncclTopoGraph*
 ncclResult_t ncclTransportSetupCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph);
 ncclResult_t ncclProxySaveCollCollNetUp(struct ncclProxyArgs *args, int pattern, int root, int nranks);
 ncclResult_t ncclProxySaveCollCollNetDn(struct ncclProxyArgs *args, int pattern, int root, int nranks);
+ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int compCap80, int nsteps, float* bandwidths);
 
 #endif

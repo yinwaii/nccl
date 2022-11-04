@@ -11,5 +11,6 @@ ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* rin
 ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks);
 ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph);
 ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int root, int nranks);
+ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int compCap80, int nsteps, float* bandwidths);
 
 #endif

@@ -6,6 +6,7 @@
 
 #include "comm.h"
 #include "core.h"
+#include "tuning.h"
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15
@@ -194,5 +195,23 @@ ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int 
   struct ncclRing* ring = &args->channel->ring;
   if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
   if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int compCap80, int nsteps, float* bandwidths) {
+  float speed = comm->nNodes <= 2 ? ringGraph->speedIntra : ringGraph->speedInter;
+  float busBw = ringGraph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*ringGraph->nChannels;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  // Convert bus BW to algorithm BW
+  float ratio = (1.0 * comm->nRanks) / nsteps;
+  float LLRatio = (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
+  // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
+  float LL128Ratio = (float)comm->nRanks / comm->nNodes < 2 ? 0.7 : 0.92 /*120.0/128.0*/;
+
+  bandwidths[NCCL_PROTO_SIMPLE] = busBw * ratio;
+  bandwidths[NCCL_PROTO_LL] = busBw * LLRatio * ratio;
+  bandwidths[NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
+
   return ncclSuccess;
 }

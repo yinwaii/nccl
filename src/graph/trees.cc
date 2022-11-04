@@ -6,6 +6,7 @@
 
 #include "comm.h"
 #include "nccl.h"
+#include "tuning.h"
 
 #define RANK_TO_INDEX(r) (rank > root ? rank-1 : rank)
 
@@ -272,5 +273,24 @@ ncclResult_t ncclProxySaveCollTreeDn(struct ncclProxyArgs *args, int pattern, in
   struct ncclTree* tree = &args->channel->treeDn;
   for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
   NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int compCap80, int nsteps, float* bandwidths) {
+  float speed = comm->nNodes <= 2 ? treeGraph->speedIntra : treeGraph->speedInter;
+  float busBw = treeGraph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*treeGraph->nChannels*7.0/9.0;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  float maxTreeBw = comm->nNodes > 2 ? 80.0 : 110.0;
+  float maxTreeBwCompCap80 = comm->nNodes > 2 ? 105.0 : 130.0;
+  // Convert bus BW to algorithm BW
+  float ratio = .5;
+  float LLRatio = 1.0 / 3.8;
+  float LL128Ratio = comm->nNodes == 1 ? 7.0 / 9.0 : 0.915 /*120.0/128.0*/;
+
+  bandwidths[NCCL_PROTO_SIMPLE] = std::min(busBw * .9f, maxTreeBw) * ratio;
+  bandwidths[NCCL_PROTO_LL] = std::min(busBw * .9f, maxTreeBw) * LLRatio * ratio;
+  bandwidths[NCCL_PROTO_LL128] = std::min(std::min(busBw * .9f, compCap80 ? maxTreeBwCompCap80 : maxTreeBw) * LL128Ratio, LL128BusBw) * ratio;
+
   return ncclSuccess;
 }

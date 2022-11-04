@@ -1,6 +1,7 @@
 #include "comm.h"
 #include "coll_net.h"
 #include "bootstrap.h"
+#include "tuning.h"
 #include "net.h"
 
 static ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
@@ -243,5 +244,20 @@ ncclResult_t ncclProxySaveCollCollNetDn(struct ncclProxyArgs *args, int pattern,
   struct ncclTree *tree = &args->channel->collTreeDn;
   NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
   NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int compCap80, int nsteps, float* bandwidths) {
+  float speed = collNetGraph->speedIntra;
+  float busBw = collNetGraph->nChannels * speed;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  // Convert bus BW to algorithm BW
+  float ratio = .5;
+
+  bandwidths[NCCL_PROTO_SIMPLE] = busBw * .9 * ratio;
+  bandwidths[NCCL_PROTO_LL] = busBw * .9 * 1.0/6.0 * ratio;
+  bandwidths[NCCL_PROTO_LL128] = 0;
+
   return ncclSuccess;
 }
