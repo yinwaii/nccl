@@ -7,6 +7,7 @@
 #include "comm.h"
 #include "core.h"
 #include "tuning.h"
+#include "topo.h"
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15
@@ -198,7 +199,10 @@ ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int compCap80, int nsteps, float* bandwidths) {
+ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int compCap80, float* bandwidths) {
+  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    comm->nRanks;
   float speed = comm->nNodes <= 2 ? ringGraph->speedIntra : ringGraph->speedInter;
   float busBw = ringGraph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*ringGraph->nChannels;
   // Various model refinements
@@ -213,5 +217,34 @@ ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringG
   bandwidths[NCCL_PROTO_LL] = busBw * LLRatio * ratio;
   bandwidths[NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
 
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningLatRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int a) {
+  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    comm->nRanks;
+  int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
+    comm->nNodes;
+  int intraHw = ringGraph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->latencies[coll][a][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    float lat = hwLat[hw][a][p];
+    if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
+      if (ringGraph->sameChannels) {
+        comm->latencies[coll][a][p] += lat;
+      } else {
+        if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
+        comm->latencies[coll][a][p] += nsteps*lat;
+      }
+    } else {
+      comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
+    }
+  }
   return ncclSuccess;
 }

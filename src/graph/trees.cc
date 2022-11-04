@@ -7,6 +7,7 @@
 #include "comm.h"
 #include "nccl.h"
 #include "tuning.h"
+#include "topo.h"
 
 #define RANK_TO_INDEX(r) (rank > root ? rank-1 : rank)
 
@@ -276,7 +277,7 @@ ncclResult_t ncclProxySaveCollTreeDn(struct ncclProxyArgs *args, int pattern, in
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int compCap80, int nsteps, float* bandwidths) {
+ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int compCap80, float* bandwidths) {
   float speed = comm->nNodes <= 2 ? treeGraph->speedIntra : treeGraph->speedInter;
   float busBw = treeGraph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*treeGraph->nChannels*7.0/9.0;
   // Various model refinements
@@ -292,5 +293,18 @@ ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeG
   bandwidths[NCCL_PROTO_LL] = std::min(busBw * .9f, maxTreeBw) * LLRatio * ratio;
   bandwidths[NCCL_PROTO_LL128] = std::min(std::min(busBw * .9f, compCap80 ? maxTreeBwCompCap80 : maxTreeBw) * LL128Ratio, LL128BusBw) * ratio;
 
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningLatTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int a) {
+  int intraHw = treeGraph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->latencies[coll][a][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    comm->latencies[coll][a][p] +=
+        2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
+  }
   return ncclSuccess;
 }

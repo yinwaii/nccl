@@ -64,8 +64,10 @@ static const int maxThreads [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
   { threadLL128, threadLL128, threadLL128 }
 };
 
-typedef ncclResult_t (*ncclTuningBwFunc_t)(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int compCap80, int nsteps, float* bandwidths);
+typedef ncclResult_t (*ncclTuningBwFunc_t)(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int compCap80, float* bandwidths);
 static const ncclTuningBwFunc_t ncclTuningBwFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningBwTree, ncclTuningBwRing, ncclTuningBwCollNet };
+typedef ncclResult_t (*ncclTuningLatFunc_t)(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int a);
+static const ncclTuningLatFunc_t ncclTuningLatFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningLatTree, ncclTuningLatRing, ncclTuningLatCollNet };
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   memcpy(comm->maxThreads, maxThreads, NCCL_NUM_ALGORITHMS * NCCL_NUM_PROTOCOLS * sizeof(int));
@@ -91,33 +93,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
-      ncclTuningBwFunc[a](comm, graphs[a], coll, compCap80, nsteps, (float *)(comm->bandwidths) + coll * NCCL_NUM_ALGORITHMS * NCCL_NUM_PROTOCOLS + a * NCCL_NUM_PROTOCOLS);
-
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        comm->latencies[coll][a][p] = baseLat[a][p];
-        float intraLat = hwLat[intraHw[a]][a][p];
-        float interLat = hwLat[NCCL_HW_NET][a][p];
-        if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
-        if (a == NCCL_ALGO_RING) {
-          float lat = hwLat[hw[a]][a][p];
-          if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
-            if (ringGraph->sameChannels) {
-              comm->latencies[coll][a][p] += lat;
-            } else {
-              if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw[a]][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
-              comm->latencies[coll][a][p] += nsteps*lat;
-            }
-          } else {
-            comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
-          }
-        } else if (a == NCCL_ALGO_TREE) {
-          comm->latencies[coll][a][p] +=
-            2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
-        } else {
-          comm->latencies[coll][a][p] +=
-            2 * (comm->nRanks/comm->nNodes-1) * intraLat + interLat;
-        }
-      }
+      ncclTuningBwFunc[a](comm, graphs[a], coll, compCap80, (float *)(comm->bandwidths) + coll * NCCL_NUM_ALGORITHMS * NCCL_NUM_PROTOCOLS + a * NCCL_NUM_PROTOCOLS);
+      ncclTuningLatFunc[a](comm, graphs[a], coll, a);
     }
   }
 

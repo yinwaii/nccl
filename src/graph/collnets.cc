@@ -3,6 +3,7 @@
 #include "bootstrap.h"
 #include "tuning.h"
 #include "net.h"
+#include "topo.h"
 
 static ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
   int nranks = comm->nRanks;
@@ -247,7 +248,7 @@ ncclResult_t ncclProxySaveCollCollNetDn(struct ncclProxyArgs *args, int pattern,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int compCap80, int nsteps, float* bandwidths) {
+ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int compCap80, float* bandwidths) {
   float speed = collNetGraph->speedIntra;
   float busBw = collNetGraph->nChannels * speed;
   // Various model refinements
@@ -259,5 +260,18 @@ ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* co
   bandwidths[NCCL_PROTO_LL] = busBw * .9 * 1.0/6.0 * ratio;
   bandwidths[NCCL_PROTO_LL128] = 0;
 
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningLatCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int a) {
+  int intraHw = collNetGraph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->latencies[coll][a][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    comm->latencies[coll][a][p] +=
+        2 * (comm->nRanks/comm->nNodes-1) * intraLat + interLat;
+  }
   return ncclSuccess;
 }
