@@ -16,7 +16,7 @@
 NCCL_PARAM(Nthreads, "NTHREADS", -2);
 NCCL_PARAM(Ll128Nthreads, "LL128_NTHREADS", -2);
 
-static int getNthreads(const char* name, int env, int min, int max, int def) {
+int getNthreads(const char* name, int env, int min, int max, int def) {
   int nt = env;
   if (nt > 0) {
     if (nt % WARP_SIZE != 0) {
@@ -55,49 +55,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-static const int threadSimple = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
-static const int threadLL128 = getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
-static const int maxThreads [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = 
-{
-  { threadSimple, threadSimple, threadSimple },
-  { threadSimple, threadSimple, threadSimple },
-  { threadLL128, threadLL128, threadLL128 }
-};
-
-typedef ncclResult_t (*ncclTuningBwFunc_t)(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int compCap80, float* bandwidths);
-static const ncclTuningBwFunc_t ncclTuningBwFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningBwTree, ncclTuningBwRing, ncclTuningBwCollNet };
-typedef ncclResult_t (*ncclTuningLatFunc_t)(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int a);
-static const ncclTuningLatFunc_t ncclTuningLatFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningLatTree, ncclTuningLatRing, ncclTuningLatCollNet };
-
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
-  memcpy(comm->maxThreads, maxThreads, NCCL_NUM_ALGORITHMS * NCCL_NUM_PROTOCOLS * sizeof(int));
-  int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
-    getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
-
-  if (comm->nRanks <= 1) return ncclSuccess;
-
-  int compCap80 = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
-  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
-  int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = comm->nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
-
-  for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
-    int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-      coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
-      comm->nRanks;
-    int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
-      coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
-      comm->nNodes;
-
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
-      ncclTuningBwFunc[a](comm, graphs[a], coll, compCap80, (float *)(comm->bandwidths) + coll * NCCL_NUM_ALGORITHMS * NCCL_NUM_PROTOCOLS + a * NCCL_NUM_PROTOCOLS);
-      ncclTuningLatFunc[a](comm, graphs[a], coll, a);
-    }
-  }
-
+ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, struct ncclTopoGraph **graphs) {
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
@@ -126,6 +84,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     if (c == ncclCollAllReduce && algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
 
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningDumpLatBw(struct ncclComm *comm) {
   if (comm->rank == 0) {
     char line[1024];
     sprintf(line, "Latency/AlgBw |");
@@ -152,15 +114,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       INFO(NCCL_TUNING, "%s", line);
     }
   }
+  return ncclSuccess;
+}
 
-  // Set per-thread amount of work before we increase nThreads and nChannels
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-    comm->threadThresholds[a][NCCL_PROTO_LL] = NCCL_LL_THREAD_THRESHOLD;
-    comm->threadThresholds[a][NCCL_PROTO_LL128] = NCCL_LL128_THREAD_THRESHOLD;
-    comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_THREAD_THRESHOLD;
-  }
-  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
-
+ncclResult_t ncclTuningLoadThresholds(struct ncclComm *comm) {
   // Override defaults with user env
   char* str = getenv("NCCL_THREAD_THRESHOLDS");
   if (str) {
@@ -173,30 +130,94 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       }
     }
   }
-
-  INFO(NCCL_INIT, "threadThresholds %ld/%ld/%ld | %ld/%ld/%ld | %ld/%ld/%ld",
-      comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],
-      comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128],
-      comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE],
-      comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL],
-      comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128],
-      comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE],
-      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL],
-      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128],
-      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE]);
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
+ncclResult_t ncclTuningDumpThresholds(struct ncclComm *comm) {
+  char line[1024];
+  sprintf(line, "threadThresholds ");
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+  {
+    if (a > 0) sprintf(line + strlen(line), " | ");
+    for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++)
+    {
+      if (p > 0) sprintf(line + strlen(line), "/");
+      sprintf(line + strlen(line), "%ld", comm->threadThresholds[a][p]);
+    }
+  }
+  INFO(NCCL_INIT, "%s", line);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningMaxThreads(struct ncclComm *comm, struct ncclTopoGraph *graph, int a) {
+  comm->maxThreads[a][NCCL_PROTO_SIMPLE] = comm->maxThreads[a][NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[a][NCCL_PROTO_LL128] = getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS / 4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningThresholds(struct ncclComm *comm, int a) {
+  comm->threadThresholds[a][NCCL_PROTO_LL] = NCCL_LL_THREAD_THRESHOLD;
+  comm->threadThresholds[a][NCCL_PROTO_LL128] = NCCL_LL128_THREAD_THRESHOLD;
+  comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_THREAD_THRESHOLD;
+  return ncclSuccess;
+}
+
+typedef ncclResult_t (*ncclTuningMaxThreadsFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph, int a);
+static const ncclTuningMaxThreadsFunc_t ncclTuningMaxThreadsFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningMaxThreads, ncclTuningMaxThreadsRing, ncclTuningMaxThreads };
+typedef ncclResult_t (*ncclTuningBwFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph, int coll, int a, int compCap80);
+static const ncclTuningBwFunc_t ncclTuningBwFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningBwTree, ncclTuningBwRing, ncclTuningBwCollNet };
+typedef ncclResult_t (*ncclTuningLatFunc_t)(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int a);
+static const ncclTuningLatFunc_t ncclTuningLatFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningLatTree, ncclTuningLatRing, ncclTuningLatCollNet };
+typedef ncclResult_t (*ncclTuningThresholdsFunc_t)(struct ncclComm *comm, int a);
+static const ncclTuningThresholdsFunc_t ncclTuningThresholdsFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningThresholds, ncclTuningThresholdsRing, ncclTuningThresholds };
+
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
+  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    NCCLCHECK(ncclTuningMaxThreadsFunc[a](comm, graphs[a], a));
+  }
+
+  if (comm->nRanks <= 1) return ncclSuccess;
+
+  int compCap80 = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
+
+  for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
+      NCCLCHECK(ncclTuningBwFunc[a](comm, graphs[a], coll, a, compCap80));
+      NCCLCHECK(ncclTuningLatFunc[a](comm, graphs[a], coll, a));
+    }
+  }
+
+  NCCLCHECK(ncclTopoTuneEnable(comm, minCompCap, maxCompCap, graphs));
+
+  NCCLCHECK(ncclTuningDumpLatBw(comm));
+
+  // Set per-thread amount of work before we increase nThreads and nChannels
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    NCCLCHECK(ncclTuningThresholdsFunc[a](comm, a));
+  }
+
+  NCCLCHECK(ncclTuningLoadThresholds(comm));
+  NCCLCHECK(ncclTuningDumpThresholds(comm));
+
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }
-  int logSize = log2i(info->nBytes>>6);
-  if (algorithm == NCCL_ALGO_TREE && logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
-  if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1
-      && info->coll == ncclCollAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
   *time = lat + (info->nBytes) / (1000 * bw);
+  return ncclSuccess;
+}
+
+typedef ncclResult_t (*ncclTuningAlgoTimeFunc_t)(struct ncclInfo *info, int algorithm, int protocol, float *time);
+static const ncclTuningAlgoTimeFunc_t ncclTuningAlgoTimeFunc[NCCL_NUM_ALGORITHMS] = {ncclTuningAlgoTimeTree, ncclTuningAlgoTimeRing, ncclTuningAlgoTime};
+
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
+  NCCLCHECK(ncclTuningAlgoTimeFunc[algorithm](info, algorithm, protocol, time));
   return ncclSuccess;
 }

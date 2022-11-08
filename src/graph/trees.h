@@ -12,7 +12,8 @@ ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int* firstRanks, struct 
 ncclResult_t ncclTransportSetupTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph);
 ncclResult_t ncclProxySaveCollTreeUp(struct ncclProxyArgs* args, int pattern, int root, int nranks);
 ncclResult_t ncclProxySaveCollTreeDn(struct ncclProxyArgs* args, int pattern, int root, int nranks);
-ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int compCap80, float* bandwidths);
+ncclResult_t ncclTuningBwTree(struct ncclComm *comm, struct ncclTopoGraph *graph, int coll, int a, int compCap80);
 ncclResult_t ncclTuningLatTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int a);
+ncclResult_t ncclTuningAlgoTimeTree(struct ncclInfo *info, int algorithm, int protocol, float *time);
 
 #endif

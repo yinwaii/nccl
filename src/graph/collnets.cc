@@ -248,7 +248,7 @@ ncclResult_t ncclProxySaveCollCollNetDn(struct ncclProxyArgs *args, int pattern,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int compCap80, float* bandwidths) {
+ncclResult_t ncclTuningBwCollNet(struct ncclComm *comm, struct ncclTopoGraph *collNetGraph, int coll, int a, int compCap80) {
   float speed = collNetGraph->speedIntra;
   float busBw = collNetGraph->nChannels * speed;
   // Various model refinements
@@ -256,9 +256,9 @@ ncclResult_t ncclTuningBwCollNet(struct ncclComm* comm, struct ncclTopoGraph* co
   // Convert bus BW to algorithm BW
   float ratio = .5;
 
-  bandwidths[NCCL_PROTO_SIMPLE] = busBw * .9 * ratio;
-  bandwidths[NCCL_PROTO_LL] = busBw * .9 * 1.0/6.0 * ratio;
-  bandwidths[NCCL_PROTO_LL128] = 0;
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * .9 * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * .9 * 1.0/6.0 * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = 0;
 
   return ncclSuccess;
 }

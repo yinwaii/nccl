@@ -277,9 +277,9 @@ ncclResult_t ncclProxySaveCollTreeDn(struct ncclProxyArgs *args, int pattern, in
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int compCap80, float* bandwidths) {
-  float speed = comm->nNodes <= 2 ? treeGraph->speedIntra : treeGraph->speedInter;
-  float busBw = treeGraph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*treeGraph->nChannels*7.0/9.0;
+ncclResult_t ncclTuningBwTree(struct ncclComm *comm, struct ncclTopoGraph *graph, int coll, int a, int compCap80) {
+  float speed = comm->nNodes <= 2 ? graph->speedIntra : graph->speedInter;
+  float busBw = graph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*graph->nChannels*7.0/9.0;
   // Various model refinements
   if (compCap80) busBw = std::min(busBw, 235.0f);
   float maxTreeBw = comm->nNodes > 2 ? 80.0 : 110.0;
@@ -289,9 +289,9 @@ ncclResult_t ncclTuningBwTree(struct ncclComm* comm, struct ncclTopoGraph* treeG
   float LLRatio = 1.0 / 3.8;
   float LL128Ratio = comm->nNodes == 1 ? 7.0 / 9.0 : 0.915 /*120.0/128.0*/;
 
-  bandwidths[NCCL_PROTO_SIMPLE] = std::min(busBw * .9f, maxTreeBw) * ratio;
-  bandwidths[NCCL_PROTO_LL] = std::min(busBw * .9f, maxTreeBw) * LLRatio * ratio;
-  bandwidths[NCCL_PROTO_LL128] = std::min(std::min(busBw * .9f, compCap80 ? maxTreeBwCompCap80 : maxTreeBw) * LL128Ratio, LL128BusBw) * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = std::min(busBw * .9f, maxTreeBw) * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = std::min(busBw * .9f, maxTreeBw) * LLRatio * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(std::min(busBw * .9f, compCap80 ? maxTreeBwCompCap80 : maxTreeBw) * LL128Ratio, LL128BusBw) * ratio;
 
   return ncclSuccess;
 }
@@ -306,5 +306,17 @@ ncclResult_t ncclTuningLatTree(struct ncclComm* comm, struct ncclTopoGraph* tree
     comm->latencies[coll][a][p] +=
         2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningAlgoTimeTree(struct ncclInfo* info, int algorithm, int protocol, float* time) {
+  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
+  float lat = info->comm->latencies[info->coll][algorithm][protocol];
+  if (bw == 0) {
+    *time = -1.0; return ncclSuccess;
+  }
+  int logSize = log2i(info->nBytes>>6);
+  if (logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
+  *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }

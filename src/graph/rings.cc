@@ -199,7 +199,7 @@ ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int compCap80, float* bandwidths) {
+ncclResult_t ncclTuningBwRing(struct ncclComm *comm, struct ncclTopoGraph *ringGraph, int coll, int a, int compCap80) {
   int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
     coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
     comm->nRanks;
@@ -213,9 +213,9 @@ ncclResult_t ncclTuningBwRing(struct ncclComm* comm, struct ncclTopoGraph* ringG
   // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
   float LL128Ratio = (float)comm->nRanks / comm->nNodes < 2 ? 0.7 : 0.92 /*120.0/128.0*/;
 
-  bandwidths[NCCL_PROTO_SIMPLE] = busBw * ratio;
-  bandwidths[NCCL_PROTO_LL] = busBw * LLRatio * ratio;
-  bandwidths[NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * LLRatio * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
 
   return ncclSuccess;
 }
@@ -246,5 +246,33 @@ ncclResult_t ncclTuningLatRing(struct ncclComm* comm, struct ncclTopoGraph* ring
       comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
     }
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningMaxThreadsRing(struct ncclComm *comm, struct ncclTopoGraph *graph, int a) {
+  int simpleDefaultThreads = (graph->speedIntra * graph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
+  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
+      getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
+  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] =
+      getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS / 4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningAlgoTimeRing(struct ncclInfo* info, int algorithm, int protocol, float* time) {
+  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
+  float lat = info->comm->latencies[info->coll][algorithm][protocol];
+  if (bw == 0) {
+    *time = -1.0; return ncclSuccess;
+  }
+  if (protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1 && info->coll == ncclCollAllReduce 
+      && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
+  *time = lat + (info->nBytes) / (1000 * bw);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningThresholdsRing(struct ncclComm *comm, int a) {
+  ncclTuningThresholds(comm, NCCL_ALGO_RING);
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
   return ncclSuccess;
 }
