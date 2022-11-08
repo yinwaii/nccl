@@ -94,7 +94,7 @@ static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ring
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, struct ncclTopoRanks* topoRanks) {
+ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
@@ -102,7 +102,7 @@ ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* rin
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->ring.prev = channel->ring.next = -1;
-    int* ringIntra = ringGraph->intra+c*localRanks;
+    int* ringIntra = graph->intra+c*localRanks;
     for (int i=0; i<localRanks; i++) {
       if (ringIntra[i] == rank) {
         topoRanks->ringRecv[c] = ringIntra[0];
@@ -168,12 +168,12 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph) {
+ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* graph) {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, comm->rank, comm->nRanks, rings+c*comm->nRanks));
     if (comm->nRanks == 1) continue;
-    NCCLCHECK(ncclTransportP2pSetup(comm, ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+    NCCLCHECK(ncclTransportP2pSetup(comm, graph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
   }
   return ncclSuccess;
 }
@@ -199,12 +199,12 @@ ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwRing(struct ncclComm *comm, struct ncclTopoGraph *ringGraph, int coll, int a, int compCap80) {
+ncclResult_t ncclTuningBwRing(struct ncclComm *comm, struct ncclTopoGraph *graph, int coll, int a, int compCap80) {
   int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
     coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
     comm->nRanks;
-  float speed = comm->nNodes <= 2 ? ringGraph->speedIntra : ringGraph->speedInter;
-  float busBw = ringGraph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*ringGraph->nChannels;
+  float speed = comm->nNodes <= 2 ? graph->speedIntra : graph->speedInter;
+  float busBw = graph->nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*graph->nChannels;
   // Various model refinements
   if (compCap80) busBw = std::min(busBw, 235.0f);
   // Convert bus BW to algorithm BW
@@ -220,14 +220,14 @@ ncclResult_t ncclTuningBwRing(struct ncclComm *comm, struct ncclTopoGraph *ringG
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningLatRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, int coll, int a) {
+ncclResult_t ncclTuningLatRing(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int a) {
   int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
     coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
     comm->nRanks;
   int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
     coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
     comm->nNodes;
-  int intraHw = ringGraph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  int intraHw = graph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->latencies[coll][a][p] = baseLat[a][p];
@@ -236,7 +236,7 @@ ncclResult_t ncclTuningLatRing(struct ncclComm* comm, struct ncclTopoGraph* ring
     if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
     float lat = hwLat[hw][a][p];
     if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
-      if (ringGraph->sameChannels) {
+      if (graph->sameChannels) {
         comm->latencies[coll][a][p] += lat;
       } else {
         if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
@@ -251,10 +251,10 @@ ncclResult_t ncclTuningLatRing(struct ncclComm* comm, struct ncclTopoGraph* ring
 
 ncclResult_t ncclTuningMaxThreadsRing(struct ncclComm *comm, struct ncclTopoGraph *graph, int a) {
   int simpleDefaultThreads = (graph->speedIntra * graph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
+  comm->maxThreads[a][NCCL_PROTO_SIMPLE] =
       getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
-  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] =
+  comm->maxThreads[a][NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[a][NCCL_PROTO_LL128] =
       getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS / 4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
   return ncclSuccess;
 }
@@ -272,7 +272,7 @@ ncclResult_t ncclTuningAlgoTimeRing(struct ncclInfo* info, int algorithm, int pr
 }
 
 ncclResult_t ncclTuningThresholdsRing(struct ncclComm *comm, int a) {
-  ncclTuningThresholds(comm, NCCL_ALGO_RING);
-  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
+  ncclTuningThresholds(comm, a);
+  comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
   return ncclSuccess;
 }

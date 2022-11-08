@@ -182,7 +182,7 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPresetTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, struct ncclTopoRanks* topoRanks) {
+ncclResult_t ncclTopoPresetTree(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
@@ -194,16 +194,16 @@ ncclResult_t ncclTopoPresetTree(struct ncclComm* comm, struct ncclTopoGraph* tre
     channel->treeDn.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
 
-    int* treeIntra = treeGraph->intra+c*localRanks;
+    int* treeIntra = graph->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (treeIntra[i] == rank) {
-        int recvIndex = 0, sendIndex = treeGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
+        int recvIndex = 0, sendIndex = graph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
 
         // Tree loop always flows in the same direction. Other trees are symmetric, i.e.
         // up/down go in reverse directions
-        int sym = treeGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
+        int sym = graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
 
         // Down tree is common
         topoRanks->treeDnRecv[c] = treeIntra[recvIndex];
@@ -251,12 +251,12 @@ ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, struct ncclTopoGraph* gr
   return ncclSuccess;
 }
 
-ncclResult_t ncclTransportSetupTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph) {
+ncclResult_t ncclTransportSetupTree(struct ncclComm* comm, struct ncclTopoGraph* graph) {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     if (comm->nRanks == 1) continue;
-    NCCLCHECK(ncclTransportP2pSetup(comm, treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
-    NCCLCHECK(ncclTransportP2pSetup(comm, treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+    NCCLCHECK(ncclTransportP2pSetup(comm, graph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
+    NCCLCHECK(ncclTransportP2pSetup(comm, graph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
   }
   return ncclSuccess;
 }
@@ -296,8 +296,8 @@ ncclResult_t ncclTuningBwTree(struct ncclComm *comm, struct ncclTopoGraph *graph
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningLatTree(struct ncclComm* comm, struct ncclTopoGraph* treeGraph, int coll, int a) {
-  int intraHw = treeGraph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+ncclResult_t ncclTuningLatTree(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int a) {
+  int intraHw = graph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->latencies[coll][a][p] = baseLat[a][p];
     float intraLat = hwLat[intraHw][a][p];

@@ -14,7 +14,7 @@
 /********************* Internode connection ***********************/
 /******************************************************************/
 
-typedef ncclResult_t (*ncclTopoPresetFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *ringGraph, struct ncclTopoRanks *topoRanks);
+typedef ncclResult_t (*ncclTopoPresetFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph, struct ncclTopoRanks *topoRanks);
 static const ncclTopoPresetFunc_t ncclTopoPresetFunc[NCCL_NUM_ALGORITHMS] = { ncclTopoPresetTree, ncclTopoPresetRing, ncclTopoPresetCollNet };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks) {

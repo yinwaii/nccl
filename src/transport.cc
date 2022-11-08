@@ -87,7 +87,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   return ncclSuccess;
 }
 
-typedef ncclResult_t (*ncclTransportSetupFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *ringGraph);
+typedef ncclResult_t (*ncclTransportSetupFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph);
 static const ncclTransportSetupFunc_t ncclTransportSetupFunc[NCCL_NUM_ALGORITHMS] = {ncclTransportSetupTree, ncclTransportSetupRing, ncclTransportSetupCollNet};
 
 ncclResult_t ncclTransportSetup(struct ncclComm *comm, struct ncclTopoGraph** graphs) {

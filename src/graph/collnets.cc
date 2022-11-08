@@ -5,18 +5,18 @@
 #include "net.h"
 #include "topo.h"
 
-static ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
+static ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph, int rank) {
   int nranks = comm->nRanks;
   int depth = nranks/comm->nNodes;
-  int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
+  int sendIndex = graph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
   int sendEndIndex = (sendIndex+comm->localRanks-1)%comm->localRanks;
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     // Set root of collTree to id nranks
-    if (rank == collNetGraph->intra[sendIndex+c*comm->localRanks]) { // is master
+    if (rank == graph->intra[sendIndex+c*comm->localRanks]) { // is master
       channel->collTreeUp.up = channel->collTreeDn.up = nranks;
     }
-    if (rank == collNetGraph->intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+    if (rank == graph->intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
       channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
     channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
@@ -27,10 +27,10 @@ static ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTop
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+comm->nChannels+c;
     // Set root of collTree to id nranks
-    if (rank == collNetGraph->intra[recvIndex+c*comm->localRanks]) { // is master
+    if (rank == graph->intra[recvIndex+c*comm->localRanks]) { // is master
       channel->collTreeUp.up = channel->collTreeDn.up = nranks;
     }
-    if (rank == collNetGraph->intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+    if (rank == graph->intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
       channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
     channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
@@ -39,7 +39,7 @@ static ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTop
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPresetCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclTopoRanks* topoRanks) {
+ncclResult_t ncclTopoPresetCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
@@ -51,7 +51,7 @@ ncclResult_t ncclTopoPresetCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
     channel->collTreeDn.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeDn.down[i] = -1;
 
-    int* collNetIntra = collNetGraph->intra+c*localRanks;
+    int* collNetIntra = graph->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (collNetIntra[i] == rank) {
@@ -88,7 +88,7 @@ extern struct ncclTransport collNetTransport;
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
 // We do not NCCLCHECK this call because we would fall back to P2P network in case CollNet setup fails
-static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int rank, int nranks,  int masterRank, int masterPeer, int nMasters, int type) {
+static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int rank, int nranks,  int masterRank, int masterPeer, int nMasters, int type) {
   int rankInCollNet = -1;
   int supported = 0;
   int isMaster = (rank == masterRank) ? 1 : 0;
@@ -102,7 +102,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   peerInfo->rank = nranks;
   int ret = 1;
   if (isMaster) {
-    NCCLCHECK(collNetTransport.canConnect(&ret, comm->topo, collNetGraph, myInfo, peerInfo));
+    NCCLCHECK(collNetTransport.canConnect(&ret, comm->topo, graph, myInfo, peerInfo));
   }
 
   // send master receives connect info from peer recv master
@@ -120,7 +120,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // setup
   struct ncclConnect myConnect;
   if (isMaster && ret > 0) {
-    NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->id));
+    NCCLCHECK(transportComm->setup(comm->topo, graph, myInfo, peerInfo, &myConnect, conn, channel->id));
   }
   // prepare connect handles
   ncclResult_t res;
@@ -204,26 +204,26 @@ static ncclResult_t checkCollNetSetup(struct ncclComm* comm, int rank, int collN
   return ncclSuccess;
 }
 
-ncclResult_t ncclTransportSetupCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph) {
+ncclResult_t ncclTransportSetupCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&
-      collNetSupport() && collNetGraph->nChannels) {
+      collNetSupport() && graph->nChannels) {
     int logicChannels = comm->nChannels/2;
     int collNetSetupFail = 0;
     const int recvIndex = 0;  // recv GPU index is always 0
-    const int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
+    const int sendIndex = graph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
     for (int c=0; c<logicChannels; c++) {
       struct ncclChannel* channelRecv = comm->channels+logicChannels+c;
       struct ncclChannel* channelSend = comm->channels+c;
-      NCCLCHECK(ncclTransportP2pSetup(comm, collNetGraph, channelRecv, 1, &channelRecv->collTreeDn.up, 1, channelRecv->collTreeDn.down));
-      NCCLCHECK(ncclTransportP2pSetup(comm, collNetGraph, channelSend, 1, channelSend->collTreeUp.down, 1, &channelSend->collTreeUp.up));
-      const int recvMaster = collNetGraph->intra[c*comm->localRanks+recvIndex];
-      const int sendMaster = collNetGraph->intra[c*comm->localRanks+sendIndex];
-      if (collNetSetup(comm, collNetGraph, channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
+      NCCLCHECK(ncclTransportP2pSetup(comm, graph, channelRecv, 1, &channelRecv->collTreeDn.up, 1, channelRecv->collTreeDn.down));
+      NCCLCHECK(ncclTransportP2pSetup(comm, graph, channelSend, 1, channelSend->collTreeUp.down, 1, &channelSend->collTreeUp.up));
+      const int recvMaster = graph->intra[c*comm->localRanks+recvIndex];
+      const int sendMaster = graph->intra[c*comm->localRanks+sendIndex];
+      if (collNetSetup(comm, graph, channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
         collNetSetupFail = 1;
-      else if (collNetSetup(comm, collNetGraph, channelSend, rank, nranks, sendMaster, recvMaster, comm->nNodes, 0) != 1)
+      else if (collNetSetup(comm, graph, channelSend, rank, nranks, sendMaster, recvMaster, comm->nNodes, 0) != 1)
         collNetSetupFail = 1;
     }
     // Verify CollNet setup across ranks
@@ -248,9 +248,9 @@ ncclResult_t ncclProxySaveCollCollNetDn(struct ncclProxyArgs *args, int pattern,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningBwCollNet(struct ncclComm *comm, struct ncclTopoGraph *collNetGraph, int coll, int a, int compCap80) {
-  float speed = collNetGraph->speedIntra;
-  float busBw = collNetGraph->nChannels * speed;
+ncclResult_t ncclTuningBwCollNet(struct ncclComm *comm, struct ncclTopoGraph *graph, int coll, int a, int compCap80) {
+  float speed = graph->speedIntra;
+  float busBw = graph->nChannels * speed;
   // Various model refinements
   if (compCap80) busBw = std::min(busBw, 235.0f);
   // Convert bus BW to algorithm BW
@@ -263,8 +263,8 @@ ncclResult_t ncclTuningBwCollNet(struct ncclComm *comm, struct ncclTopoGraph *co
   return ncclSuccess;
 }
 
-ncclResult_t ncclTuningLatCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int coll, int a) {
-  int intraHw = collNetGraph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+ncclResult_t ncclTuningLatCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph, int coll, int a) {
+  int intraHw = graph->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->latencies[coll][a][p] = baseLat[a][p];
     float intraLat = hwLat[intraHw][a][p];
