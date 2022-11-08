@@ -8,7 +8,7 @@
 #define __RINGS_H__
 
 ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph, struct ncclTopoRanks* topoRanks);
-ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks);
+ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, struct ncclTopoGraph* graph, int* firstRanks, struct ncclTopoRanks** allTopoRanks);
 ncclResult_t ncclTransportSetupRing(struct ncclComm* comm, struct ncclTopoGraph* ringGraph);
 ncclResult_t ncclProxySaveCollRing(struct ncclProxyArgs* args, int pattern, int root, int nranks);
 ncclResult_t ncclTuningBwRing(struct ncclComm *comm, struct ncclTopoGraph *ringGraph, int coll, int a, int compCap80);

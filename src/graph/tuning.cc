@@ -171,8 +171,7 @@ static const ncclTuningLatFunc_t ncclTuningLatFunc[NCCL_NUM_ALGORITHMS] = { nccl
 typedef ncclResult_t (*ncclTuningThresholdsFunc_t)(struct ncclComm *comm, int a);
 static const ncclTuningThresholdsFunc_t ncclTuningThresholdsFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningThresholds, ncclTuningThresholdsRing, ncclTuningThresholds };
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
-  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs) {
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     NCCLCHECK(ncclTuningMaxThreadsFunc[a](comm, graphs[a], a));
   }

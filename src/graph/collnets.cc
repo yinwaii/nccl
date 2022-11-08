@@ -72,7 +72,7 @@ ncclResult_t ncclTopoPresetCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
 
 NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
 
-ncclResult_t ncclTopoPostsetCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph) {
+ncclResult_t ncclTopoPostsetCollNet(struct ncclComm* comm, struct ncclTopoGraph* graph, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&
       collNetSupport() && graph->nChannels) {

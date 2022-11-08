@@ -222,7 +222,7 @@ ncclResult_t ncclTopoPresetTree(struct ncclComm* comm, struct ncclTopoGraph* tre
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
+ncclResult_t ncclTopoPostsetTree(struct ncclComm* comm, struct ncclTopoGraph* graph, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   // Gather data from all ranks
   int *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend;
   int nranks = comm->nRanks;

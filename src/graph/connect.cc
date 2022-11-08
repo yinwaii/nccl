@@ -14,14 +14,14 @@
 /********************* Internode connection ***********************/
 /******************************************************************/
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
-    struct ncclTopoRanks* topoRanks) {
+typedef ncclResult_t (*ncclTopoPresetFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *ringGraph, struct ncclTopoRanks *topoRanks);
+static const ncclTopoPresetFunc_t ncclTopoPresetFunc[NCCL_NUM_ALGORITHMS] = { ncclTopoPresetTree, ncclTopoPresetRing, ncclTopoPresetCollNet };
+
+ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks) {
   int nChannels = comm->nChannels;
 
-  NCCLCHECK(ncclTopoPresetRing(comm, ringGraph, topoRanks));
-  NCCLCHECK(ncclTopoPresetTree(comm, treeGraph, topoRanks));
-  NCCLCHECK(ncclTopoPresetCollNet(comm, collNetGraph, topoRanks));
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    NCCLCHECK(ncclTopoPresetFunc[a](comm, graphs[a], topoRanks));
 
   // Duplicate channels rings/trees
   struct ncclChannel* channel0 = comm->channels;
@@ -60,13 +60,15 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, struct ncclTopoGraph* collNetGraph) {
+typedef ncclResult_t (*ncclTopoPostsetFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph, int *firstRanks, struct ncclTopoRanks **allTopoRanks);
+static const ncclTopoPostsetFunc_t ncclTopoPostsetFunc[NCCL_NUM_ALGORITHMS] = {ncclTopoPostsetTree, ncclTopoPostsetRing, ncclTopoPostsetCollNet};
+
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, struct ncclTopoGraph** graphs, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
-  NCCLCHECK(ncclTopoPostsetRing(comm, firstRanks, allTopoRanks));
-  NCCLCHECK(ncclTopoPostsetTree(comm, firstRanks, allTopoRanks));
-  NCCLCHECK(ncclTopoPostsetCollNet(comm, collNetGraph));
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    NCCLCHECK(ncclTopoPostsetFunc[a](comm, graphs[a], firstRanks, allTopoRanks));
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);

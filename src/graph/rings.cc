@@ -118,7 +118,7 @@ ncclResult_t ncclTopoPresetRing(struct ncclComm* comm, struct ncclTopoGraph* rin
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
+ncclResult_t ncclTopoPostsetRing(struct ncclComm* comm, struct ncclTopoGraph* graph, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext;
   int nranks = comm->nRanks;
