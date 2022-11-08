@@ -15,9 +15,6 @@
 #include "enqueue.h"
 #include "graph.h"
 #include "argcheck.h"
-#include "graph/rings.h"
-#include "graph/trees.h"
-#include "graph/collnets.h"
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -608,9 +605,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(initChannel(comm, c), ret, affinity_restore);
   }
 
-  NCCLCHECKGOTO(ncclTransportSetupRing(comm, &ringGraph), ret, affinity_restore);
-  NCCLCHECKGOTO(ncclTransportSetupTree(comm, &treeGraph), ret, affinity_restore);
-  NCCLCHECKGOTO(ncclTransportSetupCollNet(comm, &collNetGraph), ret, affinity_restore)
+  NCCLCHECKGOTO(ncclTransportSetup(comm, graphs), ret, affinity_restore);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 

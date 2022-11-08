@@ -4,9 +4,12 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "comm.h"
-#include "info.h"
 #include "bootstrap.h"
+#include "comm.h"
+#include "graph/collnets.h"
+#include "graph/rings.h"
+#include "graph/trees.h"
+#include "info.h"
 
 extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;
@@ -84,4 +87,12 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   return ncclSuccess;
 }
 
+typedef ncclResult_t (*ncclTransportSetupFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *ringGraph);
+static const ncclTransportSetupFunc_t ncclTransportSetupFunc[NCCL_NUM_ALGORITHMS] = {ncclTransportSetupTree, ncclTransportSetupRing, ncclTransportSetupCollNet};
 
+ncclResult_t ncclTransportSetup(struct ncclComm *comm, struct ncclTopoGraph** graphs) {
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
+    NCCLCHECK(ncclTransportSetupFunc[a](comm, graphs[a]));
+  }
+  return ncclSuccess;
+}
