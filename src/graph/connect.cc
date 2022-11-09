@@ -69,8 +69,8 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgo** algos, int* first
   int nChannels = comm->nChannels;
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-    // NCCLCHECK(algos[a]->topoPostset(firstRanks, allTopoRanks));
-  NCCLCHECK(ncclTopoPostsetFunc[a](comm, &(algos[a]->graph), firstRanks, allTopoRanks));
+    NCCLCHECK(algos[a]->topoPostset(firstRanks, allTopoRanks));
+  // NCCLCHECK(ncclTopoPostsetFunc[a](comm, &(algos[a]->graph), firstRanks, allTopoRanks));
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
@@ -79,9 +79,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgo** algos, int* first
   // We permit combining max, then min, to only use the first channels, then duplicate them.
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
   int c;
-  extern int *rings;
+  // extern int *rings;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
-    // int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
+    int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
     memcpy(rings + c * nranks, rings + (c - nChannels) * nranks, nranks * sizeof(int));
     memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));
   }

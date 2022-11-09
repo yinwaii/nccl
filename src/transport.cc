@@ -93,8 +93,8 @@ static const ncclTransportSetupFunc_t ncclTransportSetupFunc[NCCL_NUM_ALGORITHMS
 
 ncclResult_t ncclTransportSetup(struct ncclComm *comm, ncclAlgo** algos) {
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    // algos[a]->transportSetup();
-    NCCLCHECK(ncclTransportSetupFunc[a](comm, &algos[a]->graph));
+    algos[a]->transportSetup();
+    // NCCLCHECK(ncclTransportSetupFunc[a](comm, graphs[a]));
   }
   return ncclSuccess;
 }
