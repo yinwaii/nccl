@@ -219,6 +219,6 @@ static const ncclTuningAlgoTimeFunc_t ncclTuningAlgoTimeFunc[NCCL_NUM_ALGORITHMS
 
 ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
   NCCLCHECK(ncclTuningAlgoTimeFunc[algorithm](info, algorithm, protocol, time));
-  WARN("Algorithm time: algo %s, proto %s, time %lf", ncclAlgoStr[algorithm], ncclProtoStr[protocol], *time);
+  // INFO(NCCL_TUNING, "Algorithm time: algo %s, proto %s, time %lf", ncclAlgoStr[algorithm], ncclProtoStr[protocol], *time);
   return ncclSuccess;
 }
