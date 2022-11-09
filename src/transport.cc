@@ -97,6 +97,8 @@ ncclResult_t ncclTransportSetup(struct ncclComm *comm, ncclAlgo** algos) {
     // NCCLCHECK(ncclTransportSetupFunc[a](comm, &algos[a]->graph));
   }
   int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
+  if (rings == nullptr)
+    return ncclInternalError;
   free(rings);
   return ncclSuccess;
 }

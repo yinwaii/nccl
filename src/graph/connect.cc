@@ -82,6 +82,8 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgo** algos, int* first
   // extern int *rings;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
     int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
+    if (rings == nullptr)
+      return ncclInternalError;
     memcpy(rings + c * nranks, rings + (c - nChannels) * nranks, nranks * sizeof(int));
     memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));
   }

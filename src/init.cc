@@ -470,11 +470,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   ncclAlgo *algos[NCCL_NUM_ALGORITHMS];
   algos[NCCL_ALGO_RING] = new ncclAlgoRing(comm);
-  algos[NCCL_ALGO_RING]->graphInit(NCCL_ALGO_RING, NCCL_TOPO_PATTERN_RING, comm->topo);
+  NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(NCCL_ALGO_RING, NCCL_TOPO_PATTERN_RING, comm->topo));
   algos[NCCL_ALGO_TREE] = new ncclAlgoTree(comm, algos[NCCL_ALGO_RING]->graph.maxChannels);
-  algos[NCCL_ALGO_TREE]->graphInit(NCCL_ALGO_TREE, NCCL_TOPO_PATTERN_SPLIT_TREE, comm->topo);
+  NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(NCCL_ALGO_TREE, NCCL_TOPO_PATTERN_SPLIT_TREE, comm->topo));
   algos[NCCL_ALGO_COLLNET] = new ncclAlgoCollNet(comm, algos[NCCL_ALGO_RING]->graph.maxChannels);
-  algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_ALGO_COLLNET, NCCL_TOPO_PATTERN_TREE, comm->topo);
+  NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_ALGO_COLLNET, NCCL_TOPO_PATTERN_TREE, comm->topo));
 
   // // Get rings and trees
   // struct ncclTopoGraph ringGraph;
