@@ -5,7 +5,7 @@
 #include "coll_net.h"
 #include "net.h"
 
-ncclAlgoCollNet::ncclAlgoCollNet(struct ncclComm *comm): ncclAlgo(comm, ncclParamCrossNic(), 0, 1, MAXCHANNELS / 2) {}
+ncclAlgoCollNet::ncclAlgoCollNet(struct ncclComm *comm, int maxChannel): ncclAlgo(comm, ncclParamCrossNic(), 1, maxChannel, maxChannel) {}
 
 ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;

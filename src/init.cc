@@ -5,6 +5,8 @@
  ************************************************************************/
 
 #include "nccl.h"
+#include "algorithm.h"
+#include "interface.h"
 #include "channel.h"
 #include "nvmlwrap.h"
 #include "bootstrap.h"
@@ -466,37 +468,47 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Print final topology
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
-  // Get rings and trees
-  struct ncclTopoGraph ringGraph;
-  ringGraph.id = 0;
-  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = ncclParamCrossNic();
-  ringGraph.collNet = 0;
-  ringGraph.minChannels = 1;
-  ringGraph.maxChannels = MAXCHANNELS/2;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
-  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
+  ncclAlgo *algos[NCCL_NUM_ALGORITHMS];
+  algos[NCCL_ALGO_RING] = new ncclAlgoRing(comm);
+  algos[NCCL_ALGO_RING]->graphInit(NCCL_ALGO_RING, NCCL_TOPO_PATTERN_RING, comm->topo);
+  algos[NCCL_ALGO_TREE] = new ncclAlgoTree(comm, algos[NCCL_ALGO_RING]->graph.maxChannels);
+  algos[NCCL_ALGO_TREE]->graphInit(NCCL_ALGO_TREE, NCCL_TOPO_PATTERN_SPLIT_TREE, comm->topo);
+  algos[NCCL_ALGO_COLLNET] = new ncclAlgoCollNet(comm, algos[NCCL_ALGO_RING]->graph.maxChannels);
+  algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_ALGO_COLLNET, NCCL_TOPO_PATTERN_TREE, comm->topo);
 
-  struct ncclTopoGraph treeGraph;
-  treeGraph.id = 1;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
-  treeGraph.crossNic = ncclParamCrossNic();
-  treeGraph.collNet = 0;
-  treeGraph.minChannels = 1;
-  treeGraph.maxChannels = ringGraph.nChannels;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
-  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
+  // // Get rings and trees
+  // struct ncclTopoGraph ringGraph;
+  // ringGraph.id = 0;
+  // ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
+  // ringGraph.crossNic = ncclParamCrossNic();
+  // ringGraph.collNet = 0;
+  // ringGraph.minChannels = 1;
+  // ringGraph.maxChannels = MAXCHANNELS/2;
+  // NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
+  // NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
 
-  struct ncclTopoGraph collNetGraph;
-  collNetGraph.id = 2;
-  collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
-  collNetGraph.collNet = 1;
-  collNetGraph.crossNic = ncclParamCrossNic();
-  collNetGraph.minChannels = collNetGraph.maxChannels = ringGraph.nChannels;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
-  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
+  // struct ncclTopoGraph treeGraph;
+  // treeGraph.id = 1;
+  // treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  // treeGraph.crossNic = ncclParamCrossNic();
+  // treeGraph.collNet = 0;
+  // treeGraph.minChannels = 1;
+  // treeGraph.maxChannels = ringGraph.nChannels;
+  // NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
+  // NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
 
-  struct ncclTopoGraph *graphs[NCCL_NUM_ALGORITHMS] = {&ringGraph, &treeGraph, &collNetGraph};
+  // struct ncclTopoGraph collNetGraph;
+  // collNetGraph.id = 2;
+  // collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  // collNetGraph.collNet = 1;
+  // collNetGraph.crossNic = ncclParamCrossNic();
+  // collNetGraph.minChannels = collNetGraph.maxChannels = ringGraph.nChannels;
+  // NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
+  // NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
+
+  struct ncclTopoGraph *graphs[NCCL_NUM_ALGORITHMS];
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    graphs[a] = &(algos[a]->graph);
 
   if (comm->rank == ncclParamGraphDumpFileRank())
     NCCLCHECK(ncclTopoDumpGraphs(comm->topo, NCCL_NUM_ALGORITHMS, graphs));
@@ -514,13 +526,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].nChannels = comm->nChannels = MAXCHANNELS;
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-    allGather3Data[rank].nChannels = comm->nChannels = std::min(comm->nChannels, graphs[a]->nChannels);
+    allGather3Data[rank].nChannels = comm->nChannels = std::min(comm->nChannels, algos[a]->graph.nChannels);
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    graphs[a]->nChannels = comm->nChannels;
-    NCCLCHECK(ncclTopoGraphCopy(allGather3Data[rank].graphInfos + a, graphs[a]));
+    algos[a]->graph.nChannels = comm->nChannels;
+    NCCLCHECK(algos[a]->graphCopy(allGather3Data[rank].graphInfos + a));
   }
 
-  NCCLCHECK(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks));
+  NCCLCHECK(ncclTopoPreset(comm, algos, &allGather3Data[rank].topoRanks));
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
@@ -555,8 +567,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
     // Make sure we align all ranks so that the tuning is consistent across ranks
     for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-      graphs[a]->nChannels = comm->nChannels = std::min(allGather3Data[i].nChannels, comm->nChannels);
-      NCCLCHECK(ncclTopoGraphFit(graphs[a], allGather3Data[i].graphInfos + a));
+      algos[a]->graph.nChannels = comm->nChannels = std::min(allGather3Data[i].nChannels, comm->nChannels);
+      NCCLCHECK(algos[a]->graphFit(allGather3Data[i].graphInfos + a));
     }
   }
 
@@ -566,7 +578,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
-  NCCLCHECK(ncclTopoPostset(comm, graphs, nodesFirstRank, allTopoRanks));
+  NCCLCHECK(ncclTopoPostset(comm, algos, nodesFirstRank, allTopoRanks));
 
   free(allTopoRanks);
   free(nodesFirstRank);
@@ -576,7 +588,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
 
-  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, graphs));
+  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, algos));
 
   char line[1024];
   line[0]='\0';
@@ -605,7 +617,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(initChannel(comm, c), ret, affinity_restore);
   }
 
-  NCCLCHECKGOTO(ncclTransportSetup(comm, graphs), ret, affinity_restore);
+  NCCLCHECKGOTO(ncclTransportSetup(comm, algos), ret, affinity_restore);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 

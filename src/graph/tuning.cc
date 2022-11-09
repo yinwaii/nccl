@@ -11,6 +11,7 @@
 #include "rings.h"
 #include "trees.h"
 #include "collnets.h"
+#include "interface.h"
 #include "topo.h"
 
 NCCL_PARAM(Nthreads, "NTHREADS", -2);
@@ -55,7 +56,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, struct ncclTopoGraph **graphs) {
+ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, ncclAlgo **algos) {
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
@@ -76,7 +77,7 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
     int pEnable = protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta/Ampere+NVLink. Other cases are not tested and may cause silent data corruption.
-      pEnable = (graphs[a]->typeInter <= PATH_PXB) && graphs[a]->typeIntra <= PATH_NVL &&
+      pEnable = (algos[a]->graph.typeInter <= PATH_PXB) && algos[a]->graph.typeIntra <= PATH_NVL &&
         ((minCompCap == 70 && maxCompCap == 70) || (minCompCap == 80 && maxCompCap == 80)) ? 1 : 0;
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
@@ -171,9 +172,9 @@ static const ncclTuningLatFunc_t ncclTuningLatFunc[NCCL_NUM_ALGORITHMS] = { nccl
 typedef ncclResult_t (*ncclTuningThresholdsFunc_t)(struct ncclComm *comm, int a);
 static const ncclTuningThresholdsFunc_t ncclTuningThresholdsFunc[NCCL_NUM_ALGORITHMS] = { ncclTuningThresholds, ncclTuningThresholdsRing, ncclTuningThresholds };
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs) {
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, ncclAlgo** algos) {
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-    NCCLCHECK(ncclTuningMaxThreadsFunc[a](comm, graphs[a], a));
+    NCCLCHECK(algos[a]->tuningMaxThreads(a));
   }
 
   if (comm->nRanks <= 1) return ncclSuccess;
@@ -183,18 +184,18 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
-      NCCLCHECK(ncclTuningBwFunc[a](comm, graphs[a], coll, a, compCap80));
-      NCCLCHECK(ncclTuningLatFunc[a](comm, graphs[a], coll, a));
+      NCCLCHECK(algos[a]->tuningBw(coll, a, compCap80));
+      NCCLCHECK(algos[a]->tuningLat(coll, a));
     }
   }
 
-  NCCLCHECK(ncclTopoTuneEnable(comm, minCompCap, maxCompCap, graphs));
+  NCCLCHECK(ncclTopoTuneEnable(comm, minCompCap, maxCompCap, algos));
 
   NCCLCHECK(ncclTuningDumpLatBw(comm));
 
   // Set per-thread amount of work before we increase nThreads and nChannels
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-    NCCLCHECK(ncclTuningThresholdsFunc[a](comm, a));
+    NCCLCHECK(algos[a]->tuningThresholds(a));
   }
 
   NCCLCHECK(ncclTuningLoadThresholds(comm));

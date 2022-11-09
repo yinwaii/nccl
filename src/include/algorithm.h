@@ -26,7 +26,6 @@ public:
 class ncclAlgoRing : public ncclAlgo
 {
 private:
-  int *rings;
   ncclResult_t connectRings(int* ringRecv, int* ringSend, int* ringPrev, int* ringNext, int* firstRanks);
   void dumpLine(int *values, int nranks, const char *prefix);
   ncclResult_t ncclBuildRings(int nrings, int *rings, int rank, int nranks, int *prev, int *next);
@@ -34,6 +33,7 @@ private:
   bool NeedProxy(int type, int pattern, int root, struct ncclRing *ring, int nranks);
 
 public:
+  int *rings;
   ncclAlgoRing() = delete;
   ncclAlgoRing(struct ncclComm *comm);
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
@@ -61,7 +61,7 @@ private:
 
 public:
   ncclAlgoTree() = delete;
-  ncclAlgoTree(struct ncclComm *comm);
+  ncclAlgoTree(struct ncclComm *comm, int maxChannel = MAXCHANNELS/2);
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();
@@ -79,7 +79,7 @@ private:
 
 public:
   ncclAlgoCollNet() = delete;
-  ncclAlgoCollNet(struct ncclComm *comm);
+  ncclAlgoCollNet(struct ncclComm *comm, int maxChannel = MAXCHANNELS/2);
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();

@@ -6,6 +6,7 @@
 
 #include "bootstrap.h"
 #include "comm.h"
+#include "interface.h"
 #include "graph/collnets.h"
 #include "graph/rings.h"
 #include "graph/trees.h"
@@ -90,9 +91,10 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
 typedef ncclResult_t (*ncclTransportSetupFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph);
 static const ncclTransportSetupFunc_t ncclTransportSetupFunc[NCCL_NUM_ALGORITHMS] = {ncclTransportSetupTree, ncclTransportSetupRing, ncclTransportSetupCollNet};
 
-ncclResult_t ncclTransportSetup(struct ncclComm *comm, struct ncclTopoGraph** graphs) {
+ncclResult_t ncclTransportSetup(struct ncclComm *comm, ncclAlgo** algos) {
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    NCCLCHECK(ncclTransportSetupFunc[a](comm, graphs[a]));
+    // algos[a]->transportSetup();
+    NCCLCHECK(ncclTransportSetupFunc[a](comm, &algos[a]->graph));
   }
   return ncclSuccess;
 }

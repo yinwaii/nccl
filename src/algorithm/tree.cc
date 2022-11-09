@@ -2,7 +2,7 @@
 #include "../graph/tuning.h"
 #include "../graph/topo.h"
 
-ncclAlgoTree::ncclAlgoTree(struct ncclComm *comm): ncclAlgo(comm, ncclParamCrossNic(), 0, 1, MAXCHANNELS / 2) {}
+ncclAlgoTree::ncclAlgoTree(struct ncclComm *comm, int maxChannel): ncclAlgo(comm, ncclParamCrossNic(), 0, 1, maxChannel) {}
 
 ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;

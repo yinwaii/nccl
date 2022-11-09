@@ -97,13 +97,6 @@ struct ncclGraphInfo {
 ncclResult_t ncclTopoGraphCopy(struct ncclGraphInfo* dst, struct ncclTopoGraph* src);
 ncclResult_t ncclTopoGraphFit(struct ncclTopoGraph* dst, struct ncclGraphInfo* src);
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks);
-
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, struct ncclTopoGraph** graphs, int* firstRanks, struct ncclTopoRanks** allTopoRanks);
-
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs);
-
-ncclResult_t ncclTransportSetup(struct ncclComm *comm, struct ncclTopoGraph **graphs);
 #include "info.h"
 ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time);
 
