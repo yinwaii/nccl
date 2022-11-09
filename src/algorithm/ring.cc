@@ -1,4 +1,6 @@
 #include "algorithm.h"
+#include "../graph/tuning.h"
+#include "../graph/topo.h"
 #define MAXWIDTH 20
 #define PREFIXLEN 15
 #define STRLENGTH (PREFIXLEN + 5 * MAXWIDTH)
@@ -142,4 +144,128 @@ ncclResult_t ncclAlgoRing::topoPostset(int *firstRanks, struct ncclTopoRanks **a
 
   return ncclSuccess;
 }
-ncclResult_t ncclTopoTuneModel(struct ncclComm *comm, int coll, int a, int compCap80);
+
+ncclResult_t ncclAlgoRing::setupChannel(int channelId, int rank, int nranks, int* ringRanks) {
+  struct ncclRing* ring = &comm->channels[channelId].ring;
+  // Reorganize ranks to start with rank.
+  int shift;
+  for (shift = 0; shift<nranks; shift++) {
+    if (ringRanks[shift] == rank) {
+      break;
+    }
+  }
+  for (int i=0; i<nranks; i++) {
+    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::transportSetup() {
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    NCCLCHECK(setupChannel(c, comm->rank, comm->nRanks, rings+c*comm->nRanks));
+    if (comm->nRanks == 1) continue;
+    NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+  }
+  // free(rings);
+  return ncclSuccess;
+}
+
+bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
+  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
+
+  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
+  // Which index in the reorganized rings should we compare root against */
+  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
+  int index = pattern == ncclPatternPipelineFrom ?
+      /*                            no recv /  no send    if root = */
+      /* bcast  */ (type == RECV ?   myrank : nextrank ):
+      /* reduce */ (type == RECV ? prevrank :   myrank );
+  int rank = ring->userRanks[index];
+  return (root != rank);
+}
+
+ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+  struct ncclRing* ring = &args->channel->ring;
+  if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
+  if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::tuningBw(int coll, int a, int compCap80) {
+  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    comm->nRanks;
+  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
+  float busBw = graph.nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*graph.nChannels;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  // Convert bus BW to algorithm BW
+  float ratio = (1.0 * comm->nRanks) / nsteps;
+  float LLRatio = (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
+  // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
+  float LL128Ratio = (float)comm->nRanks / comm->nNodes < 2 ? 0.7 : 0.92 /*120.0/128.0*/;
+
+  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * LLRatio * ratio;
+  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
+
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
+  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    comm->nRanks;
+  int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
+    comm->nNodes;
+  int intraHw = graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->latencies[coll][a][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    float lat = hwLat[hw][a][p];
+    if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
+      if (graph.sameChannels) {
+        comm->latencies[coll][a][p] += lat;
+      } else {
+        if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
+        comm->latencies[coll][a][p] += nsteps*lat;
+      }
+    } else {
+      comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::tuningMaxThreads(int a) {
+  int simpleDefaultThreads = (graph.speedIntra * graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
+  comm->maxThreads[a][NCCL_PROTO_SIMPLE] =
+      getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
+  comm->maxThreads[a][NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[a][NCCL_PROTO_LL128] =
+      getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS / 4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) {
+  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
+  float lat = info->comm->latencies[info->coll][algorithm][protocol];
+  if (bw == 0) {
+    *time = -1.0; return ncclSuccess;
+  }
+  if (protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1 && info->coll == ncclCollAllReduce 
+      && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
+  *time = lat + (info->nBytes) / (1000 * bw);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::tuningThresholds(int a) {
+  this->ncclAlgo::tuningThresholds(a);
+  comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
+  return ncclSuccess;
+}
