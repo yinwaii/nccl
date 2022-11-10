@@ -8,6 +8,7 @@
 #include "core.h"
 #include "tuning.h"
 #include "topo.h"
+#include "info.h"
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15

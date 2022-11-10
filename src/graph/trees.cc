@@ -5,9 +5,10 @@
  ************************************************************************/
 
 #include "comm.h"
+#include "info.h"
 #include "nccl.h"
-#include "tuning.h"
 #include "topo.h"
+#include "tuning.h"
 
 #define RANK_TO_INDEX(r) (rank > root ? rank-1 : rank)
 

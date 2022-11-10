@@ -1,6 +1,7 @@
 #ifndef __ALGORITHM_H__
 #define __ALGORITHM_H__
 #include "comm.h"
+#include "info.h"
 
 int64_t ncclParamCrossNic();
 
@@ -22,6 +23,7 @@ public:
   virtual ncclResult_t tuningMaxThreads(int a);
   virtual ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time);
   virtual ncclResult_t tuningThresholds(int a);
+  virtual ~ncclAlgo();
 };
 class ncclAlgoRing : public ncclAlgo
 {

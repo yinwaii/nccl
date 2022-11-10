@@ -55,3 +55,5 @@ ncclResult_t ncclAlgo::tuningThresholds(int a) {
   comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_THREAD_THRESHOLD;
   return ncclSuccess;
 }
+
+ncclAlgo::~ncclAlgo() {}

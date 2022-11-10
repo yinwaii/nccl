@@ -476,36 +476,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   algos[NCCL_ALGO_COLLNET] = new ncclAlgoCollNet(comm, algos[NCCL_ALGO_RING]->graph.nChannels);
   NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_ALGO_COLLNET, NCCL_TOPO_PATTERN_TREE, comm->topo));
 
-  // // Get rings and trees
-  // struct ncclTopoGraph ringGraph;
-  // ringGraph.id = 0;
-  // ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  // ringGraph.crossNic = ncclParamCrossNic();
-  // ringGraph.collNet = 0;
-  // ringGraph.minChannels = 1;
-  // ringGraph.maxChannels = MAXCHANNELS/2;
-  // NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
-  // NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
-
-  // struct ncclTopoGraph treeGraph;
-  // treeGraph.id = 1;
-  // treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
-  // treeGraph.crossNic = ncclParamCrossNic();
-  // treeGraph.collNet = 0;
-  // treeGraph.minChannels = 1;
-  // treeGraph.maxChannels = ringGraph.nChannels;
-  // NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
-  // NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
-
-  // struct ncclTopoGraph collNetGraph;
-  // collNetGraph.id = 2;
-  // collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
-  // collNetGraph.collNet = 1;
-  // collNetGraph.crossNic = ncclParamCrossNic();
-  // collNetGraph.minChannels = collNetGraph.maxChannels = ringGraph.nChannels;
-  // NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
-  // NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
-
   struct ncclTopoGraph *graphs[NCCL_NUM_ALGORITHMS];
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
     graphs[a] = &(algos[a]->graph);
@@ -608,7 +578,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoSetAffinity(comm->topo, comm->rank));
   ncclResult_t ret;
 
-  NCCLCHECK(computeBuffSizes(comm));
+  NCCLCHECKGOTO(computeBuffSizes(comm), ret, affinity_restore);
 
   // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
@@ -621,10 +591,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
   // Compute nChannels per peer for p2p
-  NCCLCHECK(ncclTopoComputeP2pChannels(comm));
+  NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, affinity_restore);
 
-  // Compute intra ranks (using AllGather1 data)
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    delete algos[a];
+  
   do {
+    // Compute intra ranks (using AllGather1 data)
     int intraRank0 = -1, intraRank = -1, intraRanks = 0;
     for (int i = 0; i < nranks; i++) {
       if ((allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) &&
@@ -635,7 +608,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       }
     }
     TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+          rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
     if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
       WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
           rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);

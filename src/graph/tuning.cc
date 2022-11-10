@@ -217,8 +217,10 @@ ncclResult_t ncclTuningAlgoTime(struct ncclInfo* info, int algorithm, int protoc
 typedef ncclResult_t (*ncclTuningAlgoTimeFunc_t)(struct ncclInfo *info, int algorithm, int protocol, float *time);
 static const ncclTuningAlgoTimeFunc_t ncclTuningAlgoTimeFunc[NCCL_NUM_ALGORITHMS] = {ncclTuningAlgoTimeTree, ncclTuningAlgoTimeRing, ncclTuningAlgoTime};
 
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
-  NCCLCHECK(ncclTuningAlgoTimeFunc[algorithm](info, algorithm, protocol, time));
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time, ncclAlgo** algos) {
+  // NCCLCHECK(ncclTuningAlgoTimeFunc[algorithm](info, algorithm, protocol, time));
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    NCCLCHECK(algos[a]->tuningAlgoTime(info, algorithm, protocol, time));
   // INFO(NCCL_TUNING, "Algorithm time: algo %s, proto %s, time %lf", ncclAlgoStr[algorithm], ncclProtoStr[protocol], *time);
   return ncclSuccess;
 }

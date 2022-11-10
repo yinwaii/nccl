@@ -96,8 +96,5 @@ struct ncclGraphInfo {
 };
 ncclResult_t ncclTopoGraphCopy(struct ncclGraphInfo* dst, struct ncclTopoGraph* src);
 ncclResult_t ncclTopoGraphFit(struct ncclTopoGraph* dst, struct ncclGraphInfo* src);
-
 #include "info.h"
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time);
-
 #endif

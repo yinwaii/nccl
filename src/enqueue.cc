@@ -6,6 +6,7 @@
 
 #include "enqueue.h"
 #include "argcheck.h"
+#include "interface.h"
 #include "coll_net.h"
 
 // Only generate inline kernels for LL
@@ -250,7 +251,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
-static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
+static ncclResult_t getAlgoInfo(struct ncclInfo* info, ncclAlgo** algos) {
   struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
@@ -265,7 +266,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   for (int a=0; a<nAlgos; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float time;
-      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time));
+      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time, algos));
       if (time >= 0 && time < minTime) {
         info->algorithm = a;
         info->protocol = p;
@@ -346,8 +347,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.p2p.nThreads = info->nThreads = info->comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]+2*WARP_SIZE;
     return ncclSuccess;
   }
+  ncclAlgo *algos[NCCL_NUM_ALGORITHMS] = {new ncclAlgoRing(info->comm), new ncclAlgoTree(info->comm), new ncclAlgoCollNet(info->comm)};
   // Set nstepsPerLoop and nchunksPerLoop
-  NCCLCHECK(getAlgoInfo(info));
+  NCCLCHECK(getAlgoInfo(info, algos));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
