@@ -524,9 +524,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
-  allGather3Data[rank].nChannels = comm->nChannels = MAXCHANNELS;
-  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-    allGather3Data[rank].nChannels = comm->nChannels = std::min(comm->nChannels, algos[a]->graph.nChannels);
+  allGather3Data[rank].nChannels = comm->nChannels = algos[NCCL_ALGO_TREE]->graph.nChannels = algos[NCCL_ALGO_RING]->graph.nChannels =
+      std::min(algos[NCCL_ALGO_TREE]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels);
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
     algos[a]->graph.nChannels = comm->nChannels;
     NCCLCHECK(algos[a]->graphCopy(allGather3Data[rank].graphInfos + a));
