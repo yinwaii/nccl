@@ -271,9 +271,3 @@ ncclResult_t ncclTuningAlgoTimeRing(struct ncclInfo* info, int algorithm, int pr
   *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }
-
-ncclResult_t ncclTuningThresholdsRing(struct ncclComm *comm, int a) {
-  ncclTuningThresholds(comm, a);
-  comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
-  return ncclSuccess;
-}

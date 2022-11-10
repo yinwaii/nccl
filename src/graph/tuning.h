@@ -35,6 +35,5 @@ const float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][22] = {
 int getNthreads(const char *name, int env, int min, int max, int def);
 int64_t ncclParamNthreads();
 int64_t ncclParamLl128Nthreads();
-ncclResult_t ncclTuningThresholds(struct ncclComm *comm, int a);
 
 #endif

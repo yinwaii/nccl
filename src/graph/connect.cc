@@ -5,18 +5,12 @@
  ************************************************************************/
 
 #include "comm.h"
-#include "collnets.h"
 #include "algorithm.h"
 #include "graph.h"
-#include "trees.h"
-#include "rings.h"
 
 /******************************************************************/
 /********************* Internode connection ***********************/
 /******************************************************************/
-
-typedef ncclResult_t (*ncclTopoPresetFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph, struct ncclTopoRanks *topoRanks);
-static const ncclTopoPresetFunc_t ncclTopoPresetFunc[NCCL_NUM_ALGORITHMS] = { ncclTopoPresetTree, ncclTopoPresetRing, ncclTopoPresetCollNet };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm, ncclAlgo **algos, struct ncclTopoRanks* topoRanks) {
   int nChannels = comm->nChannels;
@@ -61,16 +55,12 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-typedef ncclResult_t (*ncclTopoPostsetFunc_t)(struct ncclComm *comm, struct ncclTopoGraph *graph, int *firstRanks, struct ncclTopoRanks **allTopoRanks);
-static const ncclTopoPostsetFunc_t ncclTopoPostsetFunc[NCCL_NUM_ALGORITHMS] = {ncclTopoPostsetTree, ncclTopoPostsetRing, ncclTopoPostsetCollNet};
-
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgo** algos, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
     NCCLCHECK(algos[a]->topoPostset(firstRanks, allTopoRanks));
-  // NCCLCHECK(ncclTopoPostsetFunc[a](comm, &(algos[a]->graph), firstRanks, allTopoRanks));
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
@@ -79,7 +69,6 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgo** algos, int* first
   // We permit combining max, then min, to only use the first channels, then duplicate them.
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
   int c;
-  // extern int *rings;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
     int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
     if (rings == nullptr)

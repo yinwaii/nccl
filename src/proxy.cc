@@ -6,10 +6,8 @@
 
 #include "comm.h"
 #include "info.h"
+#include "interface.h"
 #include "collectives.h"
-#include "graph/rings.h"
-#include "graph/trees.h"
-#include "graph/collnets.h"
 
 #define PROXYARGS_ALLOCATE_SIZE 32
 struct ncclProxyPool {
@@ -93,21 +91,18 @@ ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
 }
 
 ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+  ncclAlgo *algos[NCCL_NUM_ALGORITHMS] = {new ncclAlgoTree(nullptr), new ncclAlgoRing(nullptr), new ncclAlgoCollNet(nullptr)};
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
-    NCCLCHECK(ncclProxySaveCollRing(args, pattern, root, nranks));
+    NCCLCHECK(algos[NCCL_ALGO_RING]->proxySaveColl(args, pattern, root, nranks));
   }
-  if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
-    NCCLCHECK(ncclProxySaveCollTreeUp(args, pattern, root, nranks));
+  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
+    NCCLCHECK(algos[NCCL_ALGO_TREE]->proxySaveColl(args, pattern, root, nranks));
   }
-  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
-    NCCLCHECK(ncclProxySaveCollTreeDn(args, pattern, root, nranks));
+  if (pattern == ncclPatternCollTreeUp || pattern == ncclPatternCollTreeDown) {
+    NCCLCHECK(algos[NCCL_ALGO_COLLNET]->proxySaveColl(args, pattern, root, nranks));
   }
-  if (pattern == ncclPatternCollTreeUp) {
-    NCCLCHECK(ncclProxySaveCollCollNetUp(args, pattern, root, nranks));
-  }
-  if (pattern == ncclPatternCollTreeDown) {
-    NCCLCHECK(ncclProxySaveCollCollNetDn(args, pattern, root, nranks));
-  }
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    delete algos[a];
   return ncclSuccess;
 }
 
