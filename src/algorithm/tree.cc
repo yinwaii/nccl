@@ -4,7 +4,7 @@
 
 const ncclAlgoTree algoTree;
 
-ncclAlgoTree::ncclAlgoTree(int maxChannel): ncclAlgo(ncclParamCrossNic(), 0) {}
+ncclAlgoTree::ncclAlgoTree(int maxChannel): ncclAlgoBase(ncclParamCrossNic(), 0) {}
 
 ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
@@ -380,7 +380,7 @@ ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
       break;
     }
     default: {
-      this->ncclAlgo::enqueueSlice(info, sliceInfo, coll);
+      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
       break;
     }
   }

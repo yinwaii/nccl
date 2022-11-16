@@ -7,7 +7,7 @@
 
 const ncclAlgoRing algoRing;
 
-ncclAlgoRing::ncclAlgoRing(): ncclAlgo(ncclParamCrossNic(), 0) {}
+ncclAlgoRing::ncclAlgoRing(): ncclAlgoBase(ncclParamCrossNic(), 0) {}
 
 ncclResult_t ncclAlgoRing::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
@@ -250,7 +250,7 @@ ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
 }
 
 ncclResult_t ncclAlgoRing::tuningMaxThreads(int a) {
-  this->ncclAlgo::tuningMaxThreads(a);
+  this->ncclAlgoBase::tuningMaxThreads(a);
   int simpleDefaultThreads = (graph.speedIntra * graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
   comm->maxThreads[a][NCCL_PROTO_SIMPLE] =
       getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
@@ -270,7 +270,7 @@ ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
 }
 
 ncclResult_t ncclAlgoRing::tuningThresholds(int a) {
-  this->ncclAlgo::tuningThresholds(a);
+  this->ncclAlgoBase::tuningThresholds(a);
   comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
   return ncclSuccess;
 }
@@ -323,7 +323,7 @@ ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
       break;
     }
     default: {
-      this->ncclAlgo::enqueueSlice(info, sliceInfo, coll);
+      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
       break;
     }
   }

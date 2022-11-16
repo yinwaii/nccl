@@ -10,18 +10,6 @@
 #include "nccl.h"
 #include "devcomm.h"
 
-typedef enum {
-  ncclPatternRing,
-  ncclPatternRingTwice,
-  ncclPatternPipelineFrom,
-  ncclPatternPipelineTo,
-  ncclPatternTreeUp,
-  ncclPatternTreeDown,
-  ncclPatternTreeUpDown,
-  ncclPatternCollTreeUp,
-  ncclPatternCollTreeDown
-} ncclPattern_t;
-
 // Used to pass NCCL call information between functions
 struct ncclInfo {
   ncclFunc_t coll;

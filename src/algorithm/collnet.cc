@@ -7,7 +7,7 @@
 
 const ncclAlgoCollNet algoCollNet;
 
-ncclAlgoCollNet::ncclAlgoCollNet(int maxChannel): ncclAlgo(ncclParamCrossNic(), 1) {}
+ncclAlgoCollNet::ncclAlgoCollNet(int maxChannel): ncclAlgoBase(ncclParamCrossNic(), 1) {}
 
 ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
@@ -318,7 +318,7 @@ ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSli
       break;
     }
     default: {
-      this->ncclAlgo::enqueueSlice(info, sliceInfo, coll);
+      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
       break;
     }
   }

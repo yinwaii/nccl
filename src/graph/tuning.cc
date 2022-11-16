@@ -53,7 +53,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, ncclAlgo **algos) {
+ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, ncclAlgoBase **algos) {
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
@@ -147,7 +147,7 @@ ncclResult_t ncclTuningDumpThresholds(struct ncclComm *comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, ncclAlgo** algos) {
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, ncclAlgoBase** algos) {
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     NCCLCHECK(algos[a]->tuningMaxThreads(a));
   }

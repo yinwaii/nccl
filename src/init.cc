@@ -468,7 +468,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Print final topology
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
-  ncclAlgo *algos[NCCL_NUM_ALGORITHMS];
+  ncclAlgoBase *algos[NCCL_NUM_ALGORITHMS];
   algos[NCCL_ALGO_RING] = new ncclAlgoRing;
   NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(comm, 0, NCCL_TOPO_PATTERN_RING, comm->topo, 1, MAXCHANNELS / 2));
   algos[NCCL_ALGO_TREE] = new ncclAlgoTree;

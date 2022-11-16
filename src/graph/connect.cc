@@ -12,7 +12,7 @@
 /********************* Internode connection ***********************/
 /******************************************************************/
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm, ncclAlgo **algos, struct ncclTopoRanks* topoRanks) {
+ncclResult_t ncclTopoPreset(struct ncclComm* comm, ncclAlgoBase **algos, struct ncclTopoRanks* topoRanks) {
   int nChannels = comm->nChannels;
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
@@ -55,7 +55,7 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgo** algos, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgoBase** algos, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
