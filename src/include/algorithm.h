@@ -11,16 +11,19 @@ public:
   struct ncclTopoGraph graph;
   ncclAlgo() = delete;
   ncclAlgo(int crossNic, int collNet);
+  virtual ncclResult_t getPattern(int coll, int *pattern) const;
   ncclResult_t graphInit(struct ncclComm *comm, int id, int pattern, ncclTopoSystem *system, int minChannels, int maxChannels);
   ncclResult_t graphCopy(struct ncclGraphInfo *dst);
   ncclResult_t graphFit(struct ncclGraphInfo *src);
   ncclResult_t graphDump();
   virtual ncclResult_t enqueuePattern(struct ncclInfo* info) const;
+  virtual ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   virtual ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
+  virtual ncclResult_t enqueueChannelThread(struct ncclInfo *info) const;
   virtual ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks) = 0;
   virtual ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) = 0;
   virtual ncclResult_t transportSetup() = 0;
-  virtual ncclResult_t proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const = 0;
+  virtual ncclResult_t proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const = 0;
   virtual ncclResult_t tuningBw(int coll, int a, int compCap80) = 0;
   virtual ncclResult_t tuningLat(int coll, int a) = 0;
   virtual ncclResult_t tuningMaxThreads(int a);
@@ -40,15 +43,17 @@ private:
 public:
   int *rings;
   ncclAlgoRing();
+  ncclResult_t getPattern(int coll, int *pattern) const;
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();
-  ncclResult_t proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const;
+  ncclResult_t proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const;
   ncclResult_t tuningBw(int coll, int a, int compCap80);
   ncclResult_t tuningLat(int coll, int a);
   ncclResult_t tuningMaxThreads(int a);
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
   ncclResult_t tuningThresholds(int a);
+  ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
 };
 
@@ -66,14 +71,15 @@ private:
 
 public:
   ncclAlgoTree(int maxChannel = MAXCHANNELS/2);
-  ncclResult_t enqueuePattern(struct ncclInfo *info) const;
+  ncclResult_t getPattern(int coll, int *pattern) const;
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();
-  ncclResult_t proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const;
+  ncclResult_t proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const;
   ncclResult_t tuningBw(int coll, int a, int compCap80);
   ncclResult_t tuningLat(int coll, int a);
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
+  ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
 };
 
@@ -85,12 +91,14 @@ private:
 
 public:
   ncclAlgoCollNet(int maxChannel = MAXCHANNELS/2);
-  ncclResult_t enqueuePattern(struct ncclInfo *info) const;
+  ncclResult_t getPattern(int coll, int *pattern) const;
+  ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
+  ncclResult_t enqueueChannelThread(struct ncclInfo *info) const;
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();
-  ncclResult_t proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const;
+  ncclResult_t proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const;
   ncclResult_t tuningBw(int coll, int a, int compCap80);
   ncclResult_t tuningLat(int coll, int a);
 };

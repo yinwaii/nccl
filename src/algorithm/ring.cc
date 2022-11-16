@@ -189,10 +189,13 @@ bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* r
   return (root != rank);
 }
 
-ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const {
+ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+  int pattern = info->pattern;
   struct ncclRing* ring = &args->channel->ring;
-  if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
-  if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+  if (NeedProxy(RECV, pattern, info->root, ring, info->comm->nRanks)) 
+    NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
+  if (NeedProxy(SEND, pattern, info->root, ring, info->comm->nRanks)) 
+    NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
   return ncclSuccess;
 }
 
@@ -269,6 +272,46 @@ ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
 ncclResult_t ncclAlgoRing::tuningThresholds(int a) {
   this->ncclAlgo::tuningThresholds(a);
   comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::getPattern(int coll, int *pattern) const
+{
+  switch (coll)
+  {
+  case ncclCollBroadcast:
+    *pattern = ncclPatternPipelineFrom;
+    break;
+  case ncclCollReduce:
+    *pattern = ncclPatternPipelineTo;
+    break;
+  case ncclCollReduceScatter:
+  case ncclCollAllGather:
+    *pattern = ncclPatternRing;
+    break;
+  case ncclCollAllReduce:
+    *pattern = ncclPatternRingTwice;
+    break;
+  default:
+    *pattern = -1;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoRing::enqueueLoopInfo(struct ncclInfo *info) const {
+  info->nSubChannels = 1;
+  switch (info->pattern) {
+    case ncclPatternPipelineFrom:
+    case ncclPatternPipelineTo:
+      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
+    case ncclPatternRing:
+      info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
+    case ncclPatternRingTwice:
+      info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
+    default:
+      WARN("Unknown pattern %d\n", info->pattern);
+      return ncclInternalError;
+  }
   return ncclSuccess;
 }
 

@@ -268,7 +268,8 @@ ncclResult_t ncclAlgoTree::transportSetup() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const {
+ncclResult_t ncclAlgoTree::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+  int pattern = info->pattern;
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     struct ncclTree* tree = &args->channel->treeUp;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
@@ -327,19 +328,29 @@ ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::enqueuePattern(struct ncclInfo* info) const {
-  switch (info->coll) {
+ncclResult_t ncclAlgoTree::getPattern(int coll, int *pattern) const {
+  switch (coll) {
     case ncclCollBroadcast:
-      info->pattern = ncclPatternTreeDown; break;
+      *pattern = ncclPatternTreeDown; break;
     case ncclCollReduce:
-      info->pattern = ncclPatternTreeUp; break;
-    case ncclCollReduceScatter:
-    case ncclCollAllGather:
-      info->pattern = ncclPatternRing; break;
+      *pattern = ncclPatternTreeUp; break;
     case ncclCollAllReduce:
-      info->pattern = ncclPatternTreeUpDown; break;
+      *pattern = ncclPatternTreeUpDown; break;
     default:
-      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
+      *pattern = -1;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoTree::enqueueLoopInfo(struct ncclInfo *info) const {
+  info->nSubChannels = 1;
+  switch (info->pattern) {
+    case ncclPatternTreeUp:
+    case ncclPatternTreeDown:
+    case ncclPatternTreeUpDown:
+      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
+    default:
+      WARN("Unknown pattern %d\n", info->pattern);
       return ncclInternalError;
   }
   return ncclSuccess;

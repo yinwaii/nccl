@@ -90,22 +90,23 @@ ncclResult_t ncclAlgo::graphDump() {
   return ncclSuccess;
 }
 
+ncclResult_t ncclAlgo::getPattern(int coll, int *pattern) const {
+  *pattern = -1;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclAlgo::enqueuePattern(struct ncclInfo* info) const {
-  switch (info->coll) {
-    case ncclCollBroadcast:
-      info->pattern = ncclPatternPipelineFrom; break;
-    case ncclCollReduce:
-      info->pattern = ncclPatternPipelineTo; break;
-    case ncclCollReduceScatter:
-    case ncclCollAllGather:
-      info->pattern = ncclPatternRing; break;
-    case ncclCollAllReduce:
-      info->pattern = ncclPatternRingTwice; break;
-    default:
-      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
-      return ncclInternalError;
+  NCCLCHECK(this->getPattern(info->coll, &info->pattern));
+  if (info->pattern < 0) {
+    WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
+    return ncclInternalError;
   }
   return ncclSuccess;
+}
+
+ncclResult_t ncclAlgo::enqueueLoopInfo(struct ncclInfo *info) const {
+  WARN("Unknown pattern %d\n", info->pattern);
+  return ncclInternalError;
 }
 
 ncclResult_t ncclAlgo::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl* coll) const {
@@ -119,5 +120,21 @@ ncclResult_t ncclAlgo::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo 
       break;
     }
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgo::enqueueChannelThread(struct ncclInfo *info) const {
+  ncclComm *comm = info->comm;
+  int nc = comm->nChannels; // CollNet uses one channel for up and one channel for down
+  int nt = comm->maxThreads[info->algorithm][info->protocol];
+  int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
+  while (info->nBytes < nc*nt*threadThreshold) {
+    if (nc >= 2) nc--;
+    else if ((nt % 128) == 0) nt/=2;
+    else break;
+  }
+  if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
+  info->nChannels = nc;
+  info->nThreads = nt;
   return ncclSuccess;
 }

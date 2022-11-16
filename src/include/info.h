@@ -41,8 +41,9 @@ struct ncclInfo {
   // Computed later
   int algorithm;
   int protocol;
-  ncclPattern_t pattern;
+  int pattern;
   int nChannels;
+  int nSubChannels;
   int nThreads;
   size_t nBytes;
   int nstepsPerLoop;

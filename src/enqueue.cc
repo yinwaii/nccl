@@ -281,38 +281,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
-  int nc = (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
-  int nt = comm->maxThreads[info->algorithm][info->protocol];
-  int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
-  while (info->nBytes < nc*nt*threadThreshold) {
-    if (info->algorithm != NCCL_ALGO_COLLNET && nc >= 2) nc--;
-    else if ((nt % 128) == 0) nt/=2;
-    else break;
-  }
-  if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
-  info->nChannels = nc;
-  info->nThreads = nt;
-  return ncclSuccess;
-}
-
-static ncclResult_t getLoopInfo(struct ncclInfo* info) {
-  switch (info->pattern) {
-    case ncclPatternTreeUp:
-    case ncclPatternTreeDown:
-    case ncclPatternTreeUpDown:
-    case ncclPatternPipelineFrom:
-    case ncclPatternPipelineTo:
-    case ncclPatternCollTreeUp:
-    case ncclPatternCollTreeDown:
-      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
-    case ncclPatternRing:
-      info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
-    case ncclPatternRingTwice:
-      info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
-    default:
-      WARN("Unknown pattern %d\n", info->pattern);
-      return ncclInternalError;
-  }
+  ncclAlgos[info->algorithm]->enqueueChannelThread(info);
   return ncclSuccess;
 }
 
@@ -333,7 +302,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info));
-  NCCLCHECK(getLoopInfo(info));
+  NCCLCHECK(ncclAlgos[info->algorithm]->enqueueLoopInfo(info));
 
   coll->args.coll.root = info->root;
   coll->args.coll.count = info->count;
@@ -396,7 +365,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
 
   int nChannels = info->coll == ncclCollSendRecv ? 1 : coll.args.coll.nChannels;
-  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
+  int nSubChannels = info->nSubChannels;
 
   for (int bid=0; bid<nChannels*nSubChannels; bid++) {
     int channelId = (info->coll == ncclCollSendRecv) ? info->channelId :
@@ -410,17 +379,12 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 
     // Proxy
     proxyArgs.channel = channel;
-    // Adjust pattern for CollNet based on channel index
-    if (nSubChannels == 2) {
-      info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
-    }
 
     if (info->coll == ncclCollSendRecv) {
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
       NCCLCHECK(ncclProxySaveP2p(info, channel));
-    } else {
-      NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
-    }
+    } else
+      NCCLCHECK(ncclAlgos[info->algorithm]->proxySaveColl(&proxyArgs, info));
     info->comm->myParams->gridDim.x++;
     int opIndex = channel->collFifoTail;
     struct ncclColl* c = channel->collectives+opIndex;

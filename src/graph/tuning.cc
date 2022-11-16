@@ -79,7 +79,7 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
     // Only disable algo for Allreduce since others only have one
-    if (c == ncclCollAllReduce && algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+    if (algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
 
   return ncclSuccess;
@@ -158,7 +158,9 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
+      int pattern;
+      NCCLCHECK(algos[a]->getPattern(coll, &pattern));
+      if (pattern == -1) continue;
       NCCLCHECK(algos[a]->tuningBw(coll, a, compCap80));
       NCCLCHECK(algos[a]->tuningLat(coll, a));
     }

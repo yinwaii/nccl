@@ -90,19 +90,6 @@ ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
-  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
-    NCCLCHECK(ncclAlgos[NCCL_ALGO_RING]->proxySaveColl(args, pattern, root, nranks));
-  }
-  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
-    NCCLCHECK(ncclAlgos[NCCL_ALGO_TREE]->proxySaveColl(args, pattern, root, nranks));
-  }
-  if (pattern == ncclPatternCollTreeUp || pattern == ncclPatternCollTreeDown) {
-    NCCLCHECK(ncclAlgos[NCCL_ALGO_COLLNET]->proxySaveColl(args, pattern, root, nranks));
-  }
-  return ncclSuccess;
-}
-
 ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel) {
   struct ncclProxyArgs args;
   memset(&args, 0, sizeof(struct ncclProxyArgs));

@@ -236,18 +236,21 @@ ncclResult_t ncclAlgoCollNet::transportSetup() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const {
-  if (pattern == ncclPatternCollTreeUp) {
-	// CollTree up
-	struct ncclTree *tree = &args->channel->collTreeUp;
-	NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
-	NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+  // Adjust pattern for CollNet based on channel index
+  int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
+  info->pattern = (channelId < info->comm->nChannels / info->nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+  if (info->pattern == ncclPatternCollTreeUp) {
+    // CollTree up
+    struct ncclTree *tree = &args->channel->collTreeUp;
+    NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
+    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
-  if (pattern == ncclPatternCollTreeDown) {
-	// CollTree down
-	struct ncclTree *tree = &args->channel->collTreeDn;
-	NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
-	NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+  if (info->pattern == ncclPatternCollTreeDown) {
+    // CollTree down
+    struct ncclTree *tree = &args->channel->collTreeDn;
+    NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
+    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }
   return ncclSuccess;
 }
@@ -280,19 +283,24 @@ ncclResult_t ncclAlgoCollNet::tuningLat(int coll, int a) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::enqueuePattern(struct ncclInfo* info) const {
-  switch (info->coll) {
-    case ncclCollBroadcast:
-      info->pattern = ncclPatternPipelineFrom; break;
-    case ncclCollReduce:
-      info->pattern = ncclPatternPipelineTo; break;
-    case ncclCollReduceScatter:
-    case ncclCollAllGather:
-      info->pattern = ncclPatternRing; break;
+ncclResult_t ncclAlgoCollNet::getPattern(int coll, int *pattern) const {
+  switch (coll) {
     case ncclCollAllReduce:
-      info->pattern = ncclPatternCollTreeUp; break;
+      *pattern = ncclPatternCollTreeUp; break;
     default:
-      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
+      *pattern = -1;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
+  switch (info->pattern) {
+    case ncclPatternCollTreeUp:
+    case ncclPatternCollTreeDown:
+      info->nSubChannels = 2;
+      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
+    default:
+      WARN("Unknown pattern %d\n", info->pattern);
       return ncclInternalError;
   }
   return ncclSuccess;
@@ -314,5 +322,20 @@ ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSli
       break;
     }
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoCollNet::enqueueChannelThread(struct ncclInfo *info) const {
+  ncclComm *comm = info->comm;
+  int nc = comm->nChannels / 2; // CollNet uses one channel for up and one channel for down
+  int nt = comm->maxThreads[info->algorithm][info->protocol];
+  int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
+  while (info->nBytes < nc*nt*threadThreshold) {
+    if ((nt % 128) == 0) nt/=2;
+    else break;
+  }
+  if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
+  info->nChannels = nc;
+  info->nThreads = nt;
   return ncclSuccess;
 }
