@@ -1,17 +1,19 @@
 #include "algorithm.h"
 #include "../graph/tuning.h"
 
-ncclAlgo::ncclAlgo(struct ncclComm *comm, int crossNic, int collNet, int minChannels, int maxChannels): comm(comm)
-{
+const ncclAlgo *ncclAlgos[NCCL_NUM_ALGORITHMS] = {&algoTree, &algoRing, &algoCollNet};
+
+ncclAlgo::ncclAlgo(int crossNic, int collNet) {
 	graph.crossNic = crossNic;
 	graph.collNet = collNet;
-	graph.minChannels = minChannels;
-	graph.maxChannels = maxChannels;
 }
 
-ncclResult_t ncclAlgo::graphInit(int id, int pattern, ncclTopoSystem* system) {
+ncclResult_t ncclAlgo::graphInit(struct ncclComm *comm, int id, int pattern, ncclTopoSystem* system, int minChannels, int maxChannels) {
+	this->comm = comm;
 	graph.id = id;
 	graph.pattern = pattern;
+	graph.minChannels = minChannels;
+	graph.maxChannels = maxChannels;
 	NCCLCHECK(ncclTopoCompute(system, &graph));
 	NCCLCHECK(ncclTopoPrintGraph(system, &graph));
 	return ncclSuccess;
@@ -39,7 +41,7 @@ ncclResult_t ncclAlgo::tuningMaxThreads(int a) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgo::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) {
+ncclResult_t ncclAlgo::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {
@@ -57,3 +59,33 @@ ncclResult_t ncclAlgo::tuningThresholds(int a) {
 }
 
 ncclAlgo::~ncclAlgo() {}
+
+ncclResult_t ncclAlgo::graphDump() {
+  char *line = new char[1000];
+  sprintf(line + strlen(line), "\nrank: %d\n", comm->rank);
+  sprintf(line + strlen(line), "id: %d\n", graph.id);
+  sprintf(line + strlen(line), "collNet: %d\n", graph.collNet);
+  sprintf(line + strlen(line), "minChannels: %d\n", graph.minChannels);
+  sprintf(line + strlen(line), "maxChannels: %d\n", graph.maxChannels);
+  sprintf(line + strlen(line), "nChannels: %d\n", graph.nChannels);
+  sprintf(line + strlen(line), "nHops: %d\n", graph.nHops);
+  sprintf(line + strlen(line), "pattern: %d\n", graph.pattern);
+  sprintf(line + strlen(line), "sameChannels: %d\n", graph.sameChannels);
+  sprintf(line + strlen(line), "speedIntra: %lf\n", graph.speedIntra);
+  sprintf(line + strlen(line), "speedInter: %lf\n", graph.speedInter);
+  sprintf(line + strlen(line), "typeIntra: %d\n", graph.typeIntra);
+  sprintf(line + strlen(line), "typeInter: %d\n", graph.typeInter);
+  // sprintf(line + strlen(line), "intra: \n");
+  // for (int c = 0; c < graph.nChannels; c++)
+  // {
+	// for (int g = 0; g < comm->localRanks; g++)
+	// 	sprintf(line + strlen(line), "%d ", (graph.intra + c * comm->localRanks)[g]);
+	// sprintf(line + strlen(line), "\n");
+  // }
+  // sprintf(line + strlen(line), "inter: \n");
+  // for (int c = 0; c < graph.nChannels; c++)
+	// sprintf(line + strlen(line), "%d %d\n", graph.inter[c * 2], graph.inter[c * 2 + 1]);
+  WARN("%s\n", line);
+  delete[] line;
+  return ncclSuccess;
+}

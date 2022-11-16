@@ -251,7 +251,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
-static ncclResult_t getAlgoInfo(struct ncclInfo* info, ncclAlgo** algos) {
+static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
@@ -266,7 +266,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, ncclAlgo** algos) {
   for (int a=0; a<nAlgos; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float time;
-      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time, algos));
+      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time));
       if (time >= 0 && time < minTime) {
         info->algorithm = a;
         info->protocol = p;
@@ -347,9 +347,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.p2p.nThreads = info->nThreads = info->comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]+2*WARP_SIZE;
     return ncclSuccess;
   }
-  ncclAlgo *algos[NCCL_NUM_ALGORITHMS] = {new ncclAlgoTree(info->comm), new ncclAlgoRing(info->comm), new ncclAlgoCollNet(info->comm)};
+
   // Set nstepsPerLoop and nchunksPerLoop
-  NCCLCHECK(getAlgoInfo(info, algos));
+  NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
@@ -411,8 +411,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->opCount = info->comm->opCount;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->op;
-  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
-    delete algos[a];
   TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
       proxyArgs->opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
       nLoops, proxyArgs->nsteps, info->comm);

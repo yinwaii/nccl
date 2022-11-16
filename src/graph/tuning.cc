@@ -189,9 +189,9 @@ ncclResult_t ncclTuningAlgoTime(struct ncclInfo* info, int algorithm, int protoc
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time, ncclAlgo** algos) {
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-    NCCLCHECK(algos[a]->tuningAlgoTime(info, algorithm, protocol, time));
+    NCCLCHECK(ncclAlgos[a]->tuningAlgoTime(info, algorithm, protocol, time));
   // INFO(NCCL_TUNING, "Algorithm time: algo %s, proto %s, time %lf", ncclAlgoStr[algorithm], ncclProtoStr[protocol], *time);
   return ncclSuccess;
 }

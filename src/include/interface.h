@@ -5,6 +5,5 @@
 ncclResult_t ncclTopoPreset(struct ncclComm *comm, ncclAlgo **algos, struct ncclTopoRanks *topoRanks);
 ncclResult_t ncclTopoPostset(struct ncclComm *comm, ncclAlgo **algos, int *firstRanks, struct ncclTopoRanks **allTopoRanks);
 ncclResult_t ncclTopoTuneModel(struct ncclComm *comm, int minCompCap, int maxCompCap, ncclAlgo **algos);
-ncclResult_t ncclTransportSetup(struct ncclComm *comm, ncclAlgo **algos);
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time, ncclAlgo **algos);
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time);
 #endif

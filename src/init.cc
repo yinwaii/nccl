@@ -469,12 +469,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
   ncclAlgo *algos[NCCL_NUM_ALGORITHMS];
-  algos[NCCL_ALGO_RING] = new ncclAlgoRing(comm);
-  NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(NCCL_ALGO_RING, NCCL_TOPO_PATTERN_RING, comm->topo));
-  algos[NCCL_ALGO_TREE] = new ncclAlgoTree(comm, algos[NCCL_ALGO_RING]->graph.nChannels);
-  NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(NCCL_ALGO_TREE, NCCL_TOPO_PATTERN_SPLIT_TREE, comm->topo));
-  algos[NCCL_ALGO_COLLNET] = new ncclAlgoCollNet(comm, algos[NCCL_ALGO_RING]->graph.nChannels);
-  NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_ALGO_COLLNET, NCCL_TOPO_PATTERN_TREE, comm->topo));
+  algos[NCCL_ALGO_RING] = new ncclAlgoRing;
+  NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(comm, 0, NCCL_TOPO_PATTERN_RING, comm->topo, 1, MAXCHANNELS / 2));
+  algos[NCCL_ALGO_TREE] = new ncclAlgoTree;
+  NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(comm, 1, NCCL_TOPO_PATTERN_SPLIT_TREE, comm->topo, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
+  algos[NCCL_ALGO_COLLNET] = new ncclAlgoCollNet;
+  NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(comm, 2, NCCL_TOPO_PATTERN_TREE, comm->topo, algos[NCCL_ALGO_RING]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels));
 
   struct ncclTopoGraph *graphs[NCCL_NUM_ALGORITHMS];
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
@@ -586,7 +586,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(initChannel(comm, c), ret, affinity_restore);
   }
 
-  NCCLCHECKGOTO(ncclTransportSetup(comm, algos), ret, affinity_restore);
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
+    NCCLCHECKGOTO(algos[a]->transportSetup(), ret, affinity_restore);
+  }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 

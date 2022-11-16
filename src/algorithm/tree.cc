@@ -2,7 +2,9 @@
 #include "../graph/tuning.h"
 #include "../graph/topo.h"
 
-ncclAlgoTree::ncclAlgoTree(struct ncclComm *comm, int maxChannel): ncclAlgo(comm, ncclParamCrossNic(), 0, 1, maxChannel) {}
+const ncclAlgoTree algoTree;
+
+ncclAlgoTree::ncclAlgoTree(int maxChannel): ncclAlgo(ncclParamCrossNic(), 0) {}
 
 ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
@@ -266,7 +268,7 @@ ncclResult_t ncclAlgoTree::transportSetup() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+ncclResult_t ncclAlgoTree::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const {
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     struct ncclTree* tree = &args->channel->treeUp;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
@@ -313,7 +315,7 @@ ncclResult_t ncclAlgoTree::tuningLat(int coll, int a) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) {
+ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {

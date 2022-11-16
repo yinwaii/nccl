@@ -84,14 +84,3 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   TRACE(NCCL_INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
   return ncclSuccess;
 }
-
-ncclResult_t ncclTransportSetup(struct ncclComm *comm, ncclAlgo** algos) {
-  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    NCCLCHECK(algos[a]->transportSetup());
-  }
-  int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
-  if (rings == nullptr)
-    return ncclInternalError;
-  free(rings);
-  return ncclSuccess;
-}

@@ -5,7 +5,9 @@
 #include "coll_net.h"
 #include "net.h"
 
-ncclAlgoCollNet::ncclAlgoCollNet(struct ncclComm *comm, int maxChannel): ncclAlgo(comm, ncclParamCrossNic(), 1, maxChannel, maxChannel) {}
+const ncclAlgoCollNet algoCollNet;
+
+ncclAlgoCollNet::ncclAlgoCollNet(int maxChannel): ncclAlgo(ncclParamCrossNic(), 1) {}
 
 ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
@@ -234,7 +236,7 @@ ncclResult_t ncclAlgoCollNet::transportSetup() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const {
   if (pattern == ncclPatternCollTreeUp) {
 	// CollTree up
 	struct ncclTree *tree = &args->channel->collTreeUp;

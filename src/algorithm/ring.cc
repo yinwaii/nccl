@@ -5,7 +5,9 @@
 #define PREFIXLEN 15
 #define STRLENGTH (PREFIXLEN + 5 * MAXWIDTH)
 
-ncclAlgoRing::ncclAlgoRing(struct ncclComm *comm): ncclAlgo(comm, ncclParamCrossNic(), 0, 1, MAXCHANNELS / 2) {}
+const ncclAlgoRing algoRing;
+
+ncclAlgoRing::ncclAlgoRing(): ncclAlgo(ncclParamCrossNic(), 0) {}
 
 ncclResult_t ncclAlgoRing::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
@@ -76,10 +78,10 @@ void ncclAlgoRing::dumpLine(int* values, int nranks, const char* prefix) {
 ncclResult_t ncclAlgoRing::ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
   for (int r=0; r<nrings; r++) {
     char prefix[30];
-    /*sprintf(prefix, "[%d] Channel %d Prev : ", rank, r);
+    sprintf(prefix, "[%d] Channel %d Prev : ", rank, r);
     dumpLine(prev+r*nranks, nranks, prefix);
     sprintf(prefix, "[%d] Channel %d Next : ", rank, r);
-    dumpLine(next+r*nranks, nranks, prefix);*/
+    dumpLine(next+r*nranks, nranks, prefix);
 
     int current = rank;
     for (int i=0; i<nranks; i++) {
@@ -167,11 +169,13 @@ ncclResult_t ncclAlgoRing::transportSetup() {
     if (comm->nRanks == 1) continue;
     NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
   }
-  // free(rings);
+  if (rings == nullptr)
+    return ncclInternalError;
+  free(rings);
   return ncclSuccess;
 }
 
-bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
+bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) const {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
 
   /* In chains, one rank does not need a proxy. Let's figure out which one it is */
@@ -185,7 +189,7 @@ bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* r
   return (root != rank);
 }
 
-ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) {
+ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, int pattern, int root, int nranks) const {
   struct ncclRing* ring = &args->channel->ring;
   if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
   if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
@@ -243,16 +247,14 @@ ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
 }
 
 ncclResult_t ncclAlgoRing::tuningMaxThreads(int a) {
+  this->ncclAlgo::tuningMaxThreads(a);
   int simpleDefaultThreads = (graph.speedIntra * graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
   comm->maxThreads[a][NCCL_PROTO_SIMPLE] =
       getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
-  comm->maxThreads[a][NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
-  comm->maxThreads[a][NCCL_PROTO_LL128] =
-      getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS / 4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) {
+ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {
