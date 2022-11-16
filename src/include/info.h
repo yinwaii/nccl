@@ -53,4 +53,11 @@ struct ncclInfo {
   int channelId;
 };
 
+struct ncclSliceInfo {
+  int stepSize;
+  int chunkSteps;
+  int sliceSteps;
+  int chunkSize;
+};
+
 #endif

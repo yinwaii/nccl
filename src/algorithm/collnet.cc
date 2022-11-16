@@ -279,3 +279,40 @@ ncclResult_t ncclAlgoCollNet::tuningLat(int coll, int a) {
   }
   return ncclSuccess;
 }
+
+ncclResult_t ncclAlgoCollNet::enqueuePattern(struct ncclInfo* info) const {
+  switch (info->coll) {
+    case ncclCollBroadcast:
+      info->pattern = ncclPatternPipelineFrom; break;
+    case ncclCollReduce:
+      info->pattern = ncclPatternPipelineTo; break;
+    case ncclCollReduceScatter:
+    case ncclCollAllGather:
+      info->pattern = ncclPatternRing; break;
+    case ncclCollAllReduce:
+      info->pattern = ncclPatternCollTreeUp; break;
+    default:
+      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
+      return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+  switch (info->protocol) {
+    case NCCL_PROTO_SIMPLE: {
+      // Optimize chunkSize / nSteps
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth*16 && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth*4 && sliceInfo->chunkSize > 65536) sliceInfo->chunkSize /= 2;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
+      // Use lastChunkSize as chunkSize
+      coll->args.coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
+      break;
+    }
+    default: {
+      this->ncclAlgo::enqueueSlice(info, sliceInfo, coll);
+      break;
+    }
+  }
+  return ncclSuccess;
+}

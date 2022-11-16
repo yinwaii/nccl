@@ -15,6 +15,8 @@ public:
   ncclResult_t graphCopy(struct ncclGraphInfo *dst);
   ncclResult_t graphFit(struct ncclGraphInfo *src);
   ncclResult_t graphDump();
+  virtual ncclResult_t enqueuePattern(struct ncclInfo* info) const;
+  virtual ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
   virtual ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks) = 0;
   virtual ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) = 0;
   virtual ncclResult_t transportSetup() = 0;
@@ -47,6 +49,7 @@ public:
   ncclResult_t tuningMaxThreads(int a);
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
   ncclResult_t tuningThresholds(int a);
+  ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
 };
 
 class ncclAlgoTree: public ncclAlgo
@@ -63,6 +66,7 @@ private:
 
 public:
   ncclAlgoTree(int maxChannel = MAXCHANNELS/2);
+  ncclResult_t enqueuePattern(struct ncclInfo *info) const;
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();
@@ -70,6 +74,7 @@ public:
   ncclResult_t tuningBw(int coll, int a, int compCap80);
   ncclResult_t tuningLat(int coll, int a);
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
+  ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
 };
 
 class ncclAlgoCollNet: public ncclAlgo {
@@ -80,6 +85,8 @@ private:
 
 public:
   ncclAlgoCollNet(int maxChannel = MAXCHANNELS/2);
+  ncclResult_t enqueuePattern(struct ncclInfo *info) const;
+  ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
   ncclResult_t transportSetup();

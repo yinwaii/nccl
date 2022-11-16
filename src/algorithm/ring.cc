@@ -271,3 +271,18 @@ ncclResult_t ncclAlgoRing::tuningThresholds(int a) {
   comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
   return ncclSuccess;
 }
+
+ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+  switch (info->protocol) {
+    case NCCL_PROTO_SIMPLE: {
+      sliceInfo->chunkSteps = info->chunkSteps;
+      sliceInfo->sliceSteps = info->sliceSteps;
+      break;
+    }
+    default: {
+      this->ncclAlgo::enqueueSlice(info, sliceInfo, coll);
+      break;
+    }
+  }
+  return ncclSuccess;
+}

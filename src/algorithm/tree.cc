@@ -326,3 +326,52 @@ ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
   *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }
+
+ncclResult_t ncclAlgoTree::enqueuePattern(struct ncclInfo* info) const {
+  switch (info->coll) {
+    case ncclCollBroadcast:
+      info->pattern = ncclPatternTreeDown; break;
+    case ncclCollReduce:
+      info->pattern = ncclPatternTreeUp; break;
+    case ncclCollReduceScatter:
+    case ncclCollAllGather:
+      info->pattern = ncclPatternRing; break;
+    case ncclCollAllReduce:
+      info->pattern = ncclPatternTreeUpDown; break;
+    default:
+      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
+      return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+  switch (info->protocol) {
+    case NCCL_PROTO_SIMPLE: {
+      if (info->pattern == ncclPatternTreeUpDown) {
+        // Optimize chunkSize / nSteps
+        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].treeUp.depth*8 && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
+        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].treeUp.depth*4 && sliceInfo->chunkSize > 65536) sliceInfo->chunkSize /= 2;
+        while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].treeUp.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
+      }
+      // Use lastChunkSize as chunkSize
+      coll->args.coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
+      break;
+    }
+    case NCCL_PROTO_LL128: {
+      int nNodes = info->comm->nNodes;
+      float ppn = info->comm->nRanks / (float)nNodes;
+      float nstepsLL128 = 1+log2i(nNodes) + 0.1*ppn;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < nstepsLL128*64/ppn && sliceInfo->chunkSize > 131072) sliceInfo->chunkSize /= 2;
+      while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < nstepsLL128*16/ppn && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
+      // Use lastChunkSize as chunkSize
+      coll->args.coll.lastChunkSize = sliceInfo->chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
+      break;
+    }
+    default: {
+      this->ncclAlgo::enqueueSlice(info, sliceInfo, coll);
+      break;
+    }
+  }
+  return ncclSuccess;
+}

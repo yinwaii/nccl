@@ -295,24 +295,6 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t getPatternInfo(struct ncclInfo* info) {
-  switch (info->coll) {
-    case ncclCollBroadcast:
-      info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeDown : ncclPatternPipelineFrom; break;
-    case ncclCollReduce:
-      info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUp : ncclPatternPipelineTo; break;
-    case ncclCollReduceScatter:
-    case ncclCollAllGather:
-      info->pattern = ncclPatternRing; break;
-    case ncclCollAllReduce:
-      info->pattern = info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUp : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
-    default:
-      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
-      return ncclInternalError;
-  }
-  return ncclSuccess;
-}
-
 static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   switch (info->pattern) {
     case ncclPatternTreeUp:
@@ -322,7 +304,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineTo:
     case ncclPatternCollTreeUp:
     case ncclPatternCollTreeDown:
-      info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
+      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
     case ncclPatternRing:
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
     case ncclPatternRingTwice:
@@ -350,7 +332,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
-  NCCLCHECK(getPatternInfo(info));
+  NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info));
   NCCLCHECK(getLoopInfo(info));
 
   coll->args.coll.root = info->root;
@@ -360,53 +342,24 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
 
-  int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
-  int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
-  int sliceSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->sliceSteps : 1;
-  int chunkSize  = stepSize*chunkSteps;
+  ncclSliceInfo sliceInfo;
+  sliceInfo.stepSize = info->comm->buffSizes[info->protocol] / NCCL_STEPS;
+  sliceInfo.chunkSteps = 1;
+  sliceInfo.sliceSteps = 1;
+  sliceInfo.chunkSize = sliceInfo.stepSize * sliceInfo.chunkSteps;
 
   // Compute lastChunkSize
-  if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_SIMPLE) {
-    if (info->pattern == ncclPatternTreeUpDown) {
-      // Optimize chunkSize / nSteps
-      while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*8 && chunkSize > 131072) chunkSize /= 2;
-      while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
-      while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth && chunkSize > 32768) chunkSize /= 2;
-    }
-    // Use lastChunkSize as chunkSize
-    coll->args.coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
-  } else if (info->algorithm == NCCL_ALGO_COLLNET && info->protocol == NCCL_PROTO_SIMPLE) {
-    // Optimize chunkSize / nSteps
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*16 && chunkSize > 131072) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth && chunkSize > 32768) chunkSize /= 2;
-    // Use lastChunkSize as chunkSize
-    coll->args.coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
-  } else if (info->protocol == NCCL_PROTO_LL) {
-    const ssize_t sliceSize = stepSize*sizeof(uint64_t)/sizeof(union ncclLLFifoLine);
-    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
-    coll->args.coll.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
-    ALIGN_SIZE(coll->args.coll.lastChunkSize, info->nThreads*sizeof(uint64_t));
-    coll->args.coll.lastChunkSize /= ncclTypeSize(info->datatype);
-  } else if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_LL128) {
-    int nNodes = info->comm->nNodes;
-    float ppn = info->comm->nRanks / (float)nNodes;
-    float nstepsLL128 = 1+log2i(nNodes) + 0.1*ppn;
-    while (info->nBytes / (info->nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
-    // Use lastChunkSize as chunkSize
-    coll->args.coll.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
-  }
+  ncclAlgos[info->algorithm]->enqueueSlice(info, &sliceInfo, coll);
 
   // Compute nSteps for proxies
-  int chunkEffectiveSize = chunkSize;
+  int chunkEffectiveSize = sliceInfo.chunkSize;
   if (info->protocol == NCCL_PROTO_LL) chunkEffectiveSize /= 2;
-  if (info->protocol == NCCL_PROTO_LL128) chunkEffectiveSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
+  if (info->protocol == NCCL_PROTO_LL128) chunkEffectiveSize = (sliceInfo.chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
   //if (info->comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d (algo %d proto%d)\n", info->coll, info->nBytes, info->nChannels, info->nThreads, chunkSize, info->algorithm, info->protocol);
   int nLoops = (int)(DIVUP(info->nBytes, (((size_t)(info->nChannels))*info->nchunksPerLoop*chunkEffectiveSize)));
-  proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
-  proxyArgs->sliceSteps = sliceSteps;
-  proxyArgs->chunkSteps = chunkSteps;
+  proxyArgs->nsteps = info->nstepsPerLoop * nLoops * sliceInfo.chunkSteps;
+  proxyArgs->sliceSteps = sliceInfo.sliceSteps;
+  proxyArgs->chunkSteps = sliceInfo.chunkSteps;
   proxyArgs->protocol = info->protocol;
   proxyArgs->opCount = info->comm->opCount;
   proxyArgs->dtype = info->datatype;

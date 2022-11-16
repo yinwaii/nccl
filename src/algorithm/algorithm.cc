@@ -89,3 +89,35 @@ ncclResult_t ncclAlgo::graphDump() {
   delete[] line;
   return ncclSuccess;
 }
+
+ncclResult_t ncclAlgo::enqueuePattern(struct ncclInfo* info) const {
+  switch (info->coll) {
+    case ncclCollBroadcast:
+      info->pattern = ncclPatternPipelineFrom; break;
+    case ncclCollReduce:
+      info->pattern = ncclPatternPipelineTo; break;
+    case ncclCollReduceScatter:
+    case ncclCollAllGather:
+      info->pattern = ncclPatternRing; break;
+    case ncclCollAllReduce:
+      info->pattern = ncclPatternRingTwice; break;
+    default:
+      WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
+      return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclAlgo::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl* coll) const {
+  switch(info->protocol) {
+    case NCCL_PROTO_LL: {
+      const ssize_t sliceSize = sliceInfo->stepSize * sizeof(uint64_t) / sizeof(union ncclLLFifoLine);
+      const ssize_t loopSize = info->nChannels * info->nchunksPerLoop * (ssize_t)sliceSize;
+      coll->args.coll.lastChunkSize = DIVUP((info->nBytes - (info->nBytes / loopSize) * loopSize), info->nChannels * info->nchunksPerLoop);
+      ALIGN_SIZE(coll->args.coll.lastChunkSize, info->nThreads * sizeof(uint64_t));
+      coll->args.coll.lastChunkSize /= ncclTypeSize(info->datatype);
+      break;
+    }
+  }
+  return ncclSuccess;
+}
