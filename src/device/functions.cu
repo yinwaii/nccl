@@ -6,7 +6,7 @@
 
 #include "devcomm.h"
 #include "collectives.h"
-#include "common.h"
+#include "common.cuh"
 
 __device__ struct ncclShmemData* ncclShmem;
 

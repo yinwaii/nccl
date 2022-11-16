@@ -4,9 +4,9 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "common.h"
+#include "common.cuh"
 #include "devcomm.h"
-#include "primitives.h"
+#include "primitives.cuh"
 #include "collectives.h"
 
 template<class FUNC, typename T, int UNROLL>

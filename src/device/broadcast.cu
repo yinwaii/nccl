@@ -4,9 +4,9 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "common.h"
+#include "common.cuh"
 #include "devcomm.h"
-#include "primitives.h"
+#include "primitives.cuh"
 #include "collectives.h"
 
 template<class FUNC, typename T, int UNROLL>
@@ -103,7 +103,7 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UN
     }
 };
 
-#include "prims_ll128.h"
+#include "prims_ll128.cuh"
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
   public:

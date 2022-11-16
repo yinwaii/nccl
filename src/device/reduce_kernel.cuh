@@ -8,7 +8,7 @@
 #ifndef NCCL_REDUCE_KERNEL_H_
 #define NCCL_REDUCE_KERNEL_H_
 
-#include "common_kernel.h"
+#include "common_kernel.cuh"
 #include <limits>
 
 template<typename T>
