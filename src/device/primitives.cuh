@@ -325,6 +325,6 @@ class ncclPrimitives {
 };
 
 #include "prims_ll.cuh"
-//#include "prims_ll128.cuh"
+#include "prims_ll128.cuh"
 
 #endif

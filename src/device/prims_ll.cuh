@@ -4,6 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#ifndef __PRIMS_LL_H__
+#define __PRIMS_LL_H__
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLLPrimitives {
  private:
@@ -243,3 +245,5 @@ class ncclLLPrimitives {
     saveSendSync();
   }
 };
+
+#endif
