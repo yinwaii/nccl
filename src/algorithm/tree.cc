@@ -324,7 +324,6 @@ ncclResult_t ncclAlgoTree::getPattern(int coll, int *pattern) const {
 }
 
 ncclResult_t ncclAlgoTree::enqueueLoopInfo(struct ncclInfo *info) const {
-  info->nSubChannels = 1;
   switch (info->pattern) {
     case ncclPatternTreeUp:
     case ncclPatternTreeDown:

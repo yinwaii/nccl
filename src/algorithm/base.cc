@@ -63,36 +63,6 @@ ncclResult_t ncclAlgoBase::tuningThresholds(int a) {
 
 ncclAlgoBase::~ncclAlgoBase() {}
 
-ncclResult_t ncclAlgoBase::graphDump() {
-  char *line = new char[1000];
-  sprintf(line + strlen(line), "\nrank: %d\n", comm->rank);
-  sprintf(line + strlen(line), "id: %d\n", graph.id);
-  sprintf(line + strlen(line), "collNet: %d\n", graph.collNet);
-  sprintf(line + strlen(line), "minChannels: %d\n", graph.minChannels);
-  sprintf(line + strlen(line), "maxChannels: %d\n", graph.maxChannels);
-  sprintf(line + strlen(line), "nChannels: %d\n", graph.nChannels);
-  sprintf(line + strlen(line), "nHops: %d\n", graph.nHops);
-  sprintf(line + strlen(line), "pattern: %d\n", graph.pattern);
-  sprintf(line + strlen(line), "sameChannels: %d\n", graph.sameChannels);
-  sprintf(line + strlen(line), "speedIntra: %lf\n", graph.speedIntra);
-  sprintf(line + strlen(line), "speedInter: %lf\n", graph.speedInter);
-  sprintf(line + strlen(line), "typeIntra: %d\n", graph.typeIntra);
-  sprintf(line + strlen(line), "typeInter: %d\n", graph.typeInter);
-  // sprintf(line + strlen(line), "intra: \n");
-  // for (int c = 0; c < graph.nChannels; c++)
-  // {
-	// for (int g = 0; g < comm->localRanks; g++)
-	// 	sprintf(line + strlen(line), "%d ", (graph.intra + c * comm->localRanks)[g]);
-	// sprintf(line + strlen(line), "\n");
-  // }
-  // sprintf(line + strlen(line), "inter: \n");
-  // for (int c = 0; c < graph.nChannels; c++)
-	// sprintf(line + strlen(line), "%d %d\n", graph.inter[c * 2], graph.inter[c * 2 + 1]);
-  WARN("%s\n", line);
-  delete[] line;
-  return ncclSuccess;
-}
-
 ncclResult_t ncclAlgoBase::getPattern(int coll, int *pattern) const {
   *pattern = -1;
   return ncclSuccess;
