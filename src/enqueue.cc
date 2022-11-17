@@ -252,7 +252,6 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /*****************************************************************************/
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
-  struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
   info->algorithm = -1;
@@ -302,6 +301,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info));
+  info->nSubChannels = 1;
   NCCLCHECK(ncclAlgos[info->algorithm]->enqueueLoopInfo(info));
 
   coll->args.coll.root = info->root;

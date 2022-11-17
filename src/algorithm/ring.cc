@@ -299,7 +299,6 @@ ncclResult_t ncclAlgoRing::getPattern(int coll, int *pattern) const
 }
 
 ncclResult_t ncclAlgoRing::enqueueLoopInfo(struct ncclInfo *info) const {
-  info->nSubChannels = 1;
   switch (info->pattern) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:

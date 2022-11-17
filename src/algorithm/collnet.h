@@ -7,14 +7,14 @@
 class ncclAlgoCollNet : public ncclAlgoBase
 {
 private:
-	enum Patterns
-	{
-		ncclPatternCollTreeUp,
-		ncclPatternCollTreeDown
-	};
-	ncclResult_t ncclTopoConnectCollNet(int rank);
-	int collNetSetup(struct ncclChannel *channel, int rank, int nranks, int masterRank, int masterPeer, int nMasters, int type);
-	ncclResult_t checkCollNetSetup(int rank, int collNetSetupFail);
+  enum Patterns
+  {
+    ncclPatternCollTreeUp,
+    ncclPatternCollTreeDown
+  };
+  ncclResult_t ncclTopoConnectCollNet(int rank);
+  int collNetSetup(struct ncclChannel *channel, int rank, int nranks, int masterRank, int masterPeer, int nMasters, int type);
+  ncclResult_t checkCollNetSetup(int rank, int collNetSetupFail);
 
 public:
 	ncclAlgoCollNet(int maxChannel = MAXCHANNELS / 2);

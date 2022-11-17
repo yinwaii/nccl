@@ -16,7 +16,6 @@ public:
   ncclResult_t graphInit(struct ncclComm *comm, int id, int pattern, ncclTopoSystem *system, int minChannels, int maxChannels);
   ncclResult_t graphCopy(struct ncclGraphInfo *dst);
   ncclResult_t graphFit(struct ncclGraphInfo *src);
-  ncclResult_t graphDump();
   virtual ncclResult_t enqueuePattern(struct ncclInfo* info) const;
   virtual ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   virtual ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
