@@ -195,16 +195,4 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
     }
 };
 
-template<int PROTO, class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncAllGather, NCCL_ALGO_TREE, PROTO, FUNC, T, UNROLL> {
-  public:
-    __device__ void run(struct ncclWorkElem* args) {}
-};
-
-template<int PROTO, class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncAllGather, NCCL_ALGO_COLLNET, PROTO, FUNC, T, UNROLL> {
-  public:
-    __device__ void run(struct ncclWorkElem* args) {}
-};
-
 IMPL_COLL_C(AllGather);

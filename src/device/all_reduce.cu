@@ -598,10 +598,4 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
   }
 };
 
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
-  public:
-__device__ void run(struct ncclWorkElem* args) { }
-};
-
 IMPL_COLL_R(AllReduce);

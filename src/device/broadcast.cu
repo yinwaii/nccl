@@ -150,16 +150,4 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
     }
 };
 
-template<int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_TREE, PROTO, REDOP, T, UNROLL> {
-  public:
-    __device__ void run(struct ncclWorkElem* args) {}
-};
-
-template<int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_COLLNET, PROTO, REDOP, T, UNROLL> {
-  public:
-    __device__ void run(struct ncclWorkElem* args) {}
-};
-
 IMPL_COLL_C(Broadcast);
