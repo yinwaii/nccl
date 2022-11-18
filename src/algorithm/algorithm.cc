@@ -28,3 +28,4 @@ AlgoInfo<ncclEnqueueAlgo> ncclEnqueueAlgos() {
 }
 
 AlgoInfo<ncclEnqueueAlgo> ncclAlgos = ncclEnqueueAlgos();
+const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS] = {"Tree", "Ring", "CollNet"};

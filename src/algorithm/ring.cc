@@ -300,16 +300,16 @@ ncclResult_t ncclTuningRing::tuningLat(int coll, int a) {
   int intraHw = topo->graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    comm->tuning[a].latencies[coll][p] = baseLat[a][p];
-    float intraLat = hwLat[intraHw][a][p];
-    float interLat = hwLat[NCCL_HW_NET][a][p];
+    comm->tuning[a].latencies[coll][p] = baseLat[p];
+    float intraLat = hwLat[intraHw][p];
+    float interLat = hwLat[NCCL_HW_NET][p];
     if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
-    float lat = hwLat[hw][a][p];
+    float lat = hwLat[hw][p];
     if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
       if (topo->graph.sameChannels) {
         comm->tuning[a].latencies[coll][p] += lat;
       } else {
-        if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
+        if (p == NCCL_PROTO_SIMPLE) lat = hwLatTree[hw][p]; // Add some chunk latency, waiting for proper chunk modeling
         comm->tuning[a].latencies[coll][p] += nsteps * lat;
       }
     } else {

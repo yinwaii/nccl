@@ -31,6 +31,7 @@ private:
   };
 
 public:
+  ncclEnqueueTree(): ncclEnqueueBase("Tree") {}
   ncclResult_t getPattern(int coll, int *pattern) const;
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
   ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
@@ -41,6 +42,16 @@ public:
 
 class ncclTuningTree: public ncclTuningBase
 {
+private:
+  // Latencies in us, Bandwidths in GB/s
+  const ProtoInfo<float> baseLat = { 4.4, 4.4, 0 };
+  // Tree/Simple is the latency a 256kB chunk, which is ~ base lat + 256k/12GB/s (+ 256k/12GB/s for the network).
+  const ProtoInfo<float> hwLat[3] = {
+      {.52, 1.25, 28}, // NVLINK
+      {1.0, 1.9, 28},  // PCI
+      {5.0, 8.5, 28},  // NET
+  };
+
 public:
   ncclTuningTree(ncclComm *comm, std::shared_ptr<ncclTopoBase> topo) : ncclTuningBase(comm, topo) {}
   ncclResult_t tuningBw(int coll, int a, int compCap80);
