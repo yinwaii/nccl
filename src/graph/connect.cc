@@ -12,7 +12,7 @@
 /********************* Internode connection ***********************/
 /******************************************************************/
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm, ncclAlgoBase **algos, struct ncclTopoRanks* topoRanks) {
+ncclResult_t ncclTopoPreset(struct ncclComm* comm, AlgoInfo<ncclTopoAlgo> algos, struct ncclTopoRanks* topoRanks) {
   int nChannels = comm->nChannels;
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
@@ -55,7 +55,7 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgoBase** algos, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, AlgoInfo<ncclTopoAlgo> algos, int* firstRanks, struct ncclTopoRanks** allTopoRanks) {
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
@@ -70,7 +70,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, ncclAlgoBase** algos, int* f
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
   int c;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
-    int *rings = dynamic_cast<ncclAlgoRing *>(algos[NCCL_ALGO_RING])->rings;
+    int *rings = dynamic_cast<ncclTopoRing *>(algos[NCCL_ALGO_RING].get())->rings;
     if (rings == nullptr)
       return ncclInternalError;
     memcpy(rings + c * nranks, rings + (c - nChannels) * nranks, nranks * sizeof(int));

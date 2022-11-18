@@ -2,11 +2,11 @@
 #include "../graph/tuning.h"
 #include "../graph/topo.h"
 
-const ncclAlgoTree algoTree;
+// Topo
 
-ncclAlgoTree::ncclAlgoTree(int maxChannel): ncclAlgoBase(ncclParamCrossNic(), 0) {}
+ncclTopoTree::ncclTopoTree(struct ncclComm *comm): ncclTopoBase(NCCL_ALGO_TREE, comm, ncclParamCrossNic(), 0) {}
 
-ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
+ncclResult_t ncclTopoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
@@ -56,7 +56,7 @@ ncclResult_t ncclAlgoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
  *    / \     / \     /  \     \
  *   1   3   5   7   9   11    13
  */
-ncclResult_t ncclAlgoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* parentChildType) {
+ncclResult_t ncclTopoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* parentChildType) {
   int up, down0, down1;
   int bit;
   for (bit=1; bit<nranks; bit<<=1) {
@@ -113,7 +113,7 @@ ncclResult_t ncclAlgoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, i
  *    / \     / \     /  \         / \     / \     /  \
  *   1   3   5   7   9   11       2   4   6   8  10   12
  */
-ncclResult_t ncclAlgoTree::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* parentChildType0, int* s1, int* d1_0, int* d1_1, int* parentChildType1) {
+ncclResult_t ncclTopoTree::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* parentChildType0, int* s1, int* d1_0, int* d1_1, int* parentChildType1) {
   // First tree ... use a btree
   ncclGetBtree(nranks, rank, s0, d0_0, d0_1, parentChildType0);
   // Second tree ... mirror or shift
@@ -137,18 +137,18 @@ ncclResult_t ncclAlgoTree::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0
 }
 
 
-ncclResult_t ncclAlgoTree::getIndexes(int *ranks, int *indexes, int nNodes, int *firstRanks) {
+ncclResult_t ncclTopoTree::getIndexes(int *ranks, int *indexes, int nNodes, int *firstRanks) {
   for (int n = 0; n < nNodes; n++) indexes[n] = ranks[firstRanks[n]];
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::setTreeUp(struct ncclTree* tree, int* indexes, int u) {
+ncclResult_t ncclTopoTree::setTreeUp(struct ncclTree* tree, int* indexes, int u) {
   if (u == -1) return ncclSuccess;
   tree->up = indexes[u];
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::setTreeDown(struct ncclTree* tree, int* indexes, int d) {
+ncclResult_t ncclTopoTree::setTreeDown(struct ncclTree* tree, int* indexes, int d) {
   if (d == -1) return ncclSuccess;
   int x = 0;
   while (x < NCCL_MAX_TREE_ARITY && tree->down[x] >= 0) x++;
@@ -160,7 +160,7 @@ ncclResult_t ncclAlgoTree::setTreeDown(struct ncclTree* tree, int* indexes, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::connectTrees(int* treeToParent, int* treeToChild0, int* treeToChild1, int* firstRanks, int* treePatterns) {
+ncclResult_t ncclTopoTree::connectTrees(int* treeToParent, int* treeToChild0, int* treeToChild1, int* firstRanks, int* treePatterns) {
   const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
   int* ranksToParent, *ranksToChild0, *ranksToChild1;
   NCCLCHECK(ncclCalloc(&ranksToParent, nNodes));
@@ -205,7 +205,7 @@ ncclResult_t ncclAlgoTree::connectTrees(int* treeToParent, int* treeToChild0, in
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
+ncclResult_t ncclTopoTree::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   // Gather data from all ranks
   int *treeToParent, *treeToChild0, *treeToChild1;
   int nranks = comm->nRanks;
@@ -231,7 +231,7 @@ ncclResult_t ncclAlgoTree::topoPostset(int *firstRanks, struct ncclTopoRanks **a
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::transportSetup() {
+ncclResult_t ncclTopoTree::transportSetup() {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     if (comm->nRanks == 1) continue;
@@ -242,63 +242,11 @@ ncclResult_t ncclAlgoTree::transportSetup() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
-  int pattern = info->pattern;
-  if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
-    struct ncclTree* tree = &args->channel->tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, tree->down[i], args));
-    NCCLCHECK(SaveProxy(proxySend, tree->up, args));
-  }
-  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
-    struct ncclTree* tree = &args->channel->tree;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->down[i], args));
-    NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
-  }
-  return ncclSuccess;
-}
+// Enqueue
 
-ncclResult_t ncclAlgoTree::tuningBw(int coll, int a, int compCap80) {
-  // Convert bus BW to algorithm BW
-  float ratio = .5;
-  float LLRatio = 1.0 / 3.8;
-  float LL128Ratio = comm->nNodes == 1 ? 7.0 / 9.0 : 0.915 /*120.0/128.0*/;
-
-  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
-  float busBw = graph.nChannels * speed;
-  // Various model refinements
-  if (compCap80) busBw = std::min(busBw, 235.0f);
-  int cpuArch, cpuVendor, cpuModel;
-  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
-  int index2 = comm->nNodes <= 2 ? comm->nNodes-1 : 2;
-  // LL: for single node, we look at GPU type; for multi-node, we look at CPU type
-  int index1 = comm->nNodes == 1 ? compCap80 : cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD ? 1 : 0;
-  float perChMaxTreeBw = perChMaxTreeBws[compCap80][index2];
-  busBw = std::min(busBw * .92f, graph.nChannels * perChMaxTreeBw);
-  float llMaxBw = llMaxBws[index1][index2], LL128BusBw = ll128MaxBwPerCh[coll] * graph.nChannels;
-
-  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL] = std::min(busBw * LLRatio, llMaxBw) * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
-
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoTree::tuningLat(int coll, int a) {
-  int intraHw = graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    comm->latencies[coll][a][p] = baseLat[a][p];
-    float intraLat = hwLat[intraHw][a][p];
-    float interLat = hwLat[NCCL_HW_NET][a][p];
-    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
-    comm->latencies[coll][a][p] +=
-        2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
-  }
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
-  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
-  float lat = info->comm->latencies[info->coll][algorithm][protocol];
+ncclResult_t ncclEnqueueTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
+  float bw = info->comm->tuning[algorithm].bandwidths[info->coll][protocol];
+  float lat = info->comm->tuning[algorithm].latencies[info->coll][protocol];
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }
@@ -309,7 +257,7 @@ ncclResult_t ncclAlgoTree::tuningAlgoTime(struct ncclInfo *info, int algorithm, 
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::getPattern(int coll, int *pattern) const {
+ncclResult_t ncclEnqueueTree::getPattern(int coll, int *pattern) const {
   switch (coll) {
     case ncclFuncBroadcast:
       *pattern = ncclPatternTreeDown; break;
@@ -323,7 +271,7 @@ ncclResult_t ncclAlgoTree::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::enqueueLoopInfo(struct ncclInfo *info) const {
+ncclResult_t ncclEnqueueTree::enqueueLoopInfo(struct ncclInfo *info) const {
   switch (info->pattern) {
     case ncclPatternTreeUp:
     case ncclPatternTreeDown:
@@ -336,7 +284,7 @@ ncclResult_t ncclAlgoTree::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const {
+ncclResult_t ncclEnqueueTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const {
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       if (info->pattern == ncclPatternTreeUpDown) {
@@ -360,16 +308,72 @@ ncclResult_t ncclAlgoTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
       break;
     }
     default: {
-      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, work);
+      this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, work);
       break;
     }
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoTree::enqueueChannelThread(struct ncclInfo *info) const {
-  this->ncclAlgoBase::enqueueChannelThread(info);
+ncclResult_t ncclEnqueueTree::enqueueChannelThread(struct ncclInfo *info) const {
+  this->ncclEnqueueBase::enqueueChannelThread(info);
   if (info->protocol == NCCL_PROTO_SIMPLE) 
     info->nThreads += WARP_SIZE;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueTree::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+  int pattern = info->pattern;
+  if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
+    struct ncclTree* tree = &args->channel->tree;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, tree->down[i], args));
+    NCCLCHECK(SaveProxy(proxySend, tree->up, args));
+  }
+  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
+    struct ncclTree* tree = &args->channel->tree;
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->down[i], args));
+    NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
+  }
+  return ncclSuccess;
+}
+
+// Tuning
+
+ncclResult_t ncclTuningTree::tuningBw(int coll, int a, int compCap80) {
+  // Convert bus BW to algorithm BW
+  float ratio = .5;
+  float LLRatio = 1.0 / 3.8;
+  float LL128Ratio = comm->nNodes == 1 ? 7.0 / 9.0 : 0.915 /*120.0/128.0*/;
+
+  float speed = comm->nNodes <= 2 ? topo->graph.speedIntra : topo->graph.speedInter;
+  float busBw = topo->graph.nChannels * speed;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+  int index2 = comm->nNodes <= 2 ? comm->nNodes-1 : 2;
+  // LL: for single node, we look at GPU type; for multi-node, we look at CPU type
+  int index1 = comm->nNodes == 1 ? compCap80 : cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD ? 1 : 0;
+  float perChMaxTreeBw = perChMaxTreeBws[compCap80][index2];
+  busBw = std::min(busBw * .92f, topo->graph.nChannels * perChMaxTreeBw);
+  float llMaxBw = llMaxBws[index1][index2], LL128BusBw = ll128MaxBwPerCh[coll] * topo->graph.nChannels;
+
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_LL] = std::min(busBw * LLRatio, llMaxBw) * ratio;
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
+
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningTree::tuningLat(int coll, int a) {
+  int intraHw = topo->graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->tuning[a].latencies[coll][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    comm->tuning[a].latencies[coll][p] +=
+        2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
+  }
   return ncclSuccess;
 }

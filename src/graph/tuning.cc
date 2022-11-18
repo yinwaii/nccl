@@ -53,7 +53,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, ncclAlgoBase **algos) {
+ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, AlgoInfo<ncclTuningAlgo> algos) {
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
@@ -91,12 +91,12 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
     int pEnable = protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta/Ampere+NVLink. Other cases are not tested and may cause silent data corruption.
-      pEnable = (algos[a]->graph.typeInter <= PATH_PXB) && algos[a]->graph.typeIntra <= PATH_NVL &&
+      pEnable = (algos[a]->topo->graph.typeInter <= PATH_PXB) && algos[a]->topo->graph.typeIntra <= PATH_NVL &&
         ((minCompCap == 70 && maxCompCap == 70) || (minCompCap == 80 && maxCompCap == 80)) ? 1 : 0;
     }
-    if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
+    if (pEnable == 0) comm->tuning[a].bandwidths[c][p] = 0;
     // Only disable algo for Allreduce since others only have one
-    if (algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+    if (algoEnable[a] == 0) comm->tuning[a].bandwidths[c][p] = 0;
   }
 
   return ncclSuccess;
@@ -115,7 +115,7 @@ ncclResult_t ncclTuningDumpLatBw(struct ncclComm *comm) {
     sprintf(line, " Max NThreads |");
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
+        sprintf(line+strlen(line), " %14d |", comm->tuning[a].maxThreads[p]);
       }
     }
     INFO(NCCL_TUNING, "%s", line);
@@ -123,7 +123,7 @@ ncclResult_t ncclTuningDumpLatBw(struct ncclComm *comm) {
       sprintf(line, "%13s |", ncclFuncStr[c]);
       for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+          sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->tuning[a].latencies[c][p], comm->tuning[a].bandwidths[c][p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
@@ -141,7 +141,7 @@ ncclResult_t ncclTuningLoadThresholds(struct ncclComm *comm) {
     sscanf(str, "%ld %ld %ld %ld %ld %ld", t[0], t[0]+1, t[0]+2, t[1], t[1]+1, t[1]+2);
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        if (t[a][p] >= 0) comm->threadThresholds[a][p] = t[a][p];
+        if (t[a][p] >= 0) comm->tuning[a].threadThresholds[p] = t[a][p];
       }
     }
   }
@@ -157,14 +157,15 @@ ncclResult_t ncclTuningDumpThresholds(struct ncclComm *comm) {
     for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++)
     {
       if (p > 0) sprintf(line + strlen(line), "/");
-      sprintf(line + strlen(line), "%ld", comm->threadThresholds[a][p]);
+      sprintf(line + strlen(line), "%ld", comm->tuning[a].threadThresholds[p]);
     }
   }
   INFO(NCCL_INIT, "%s", line);
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, ncclAlgoBase** algos) {
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, AlgoInfo<ncclTopoAlgo> topo) {
+  AlgoInfo<ncclTuningAlgo> algos = ncclTuningAlgos(comm, topo);
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     NCCLCHECK(algos[a]->tuningMaxThreads(a));
   }
@@ -176,7 +177,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       int pattern;
-      NCCLCHECK(algos[a]->getPattern(coll, &pattern));
+      NCCLCHECK(ncclAlgos[a]->getPattern(coll, &pattern));
       if (pattern == -1) continue;
       NCCLCHECK(algos[a]->tuningBw(coll, a, compCap80));
       NCCLCHECK(algos[a]->tuningLat(coll, a));
