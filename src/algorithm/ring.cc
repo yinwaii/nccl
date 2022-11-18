@@ -5,11 +5,11 @@
 #define PREFIXLEN 15
 #define STRLENGTH (PREFIXLEN + 5 * MAXWIDTH)
 
-const ncclAlgoRing algoRing;
+// Topo
 
-ncclAlgoRing::ncclAlgoRing(): ncclAlgoBase(ncclParamCrossNic(), 0) {}
+ncclTopoRing::ncclTopoRing(struct ncclComm *comm): ncclTopoBase(NCCL_ALGO_RING, comm, ncclParamCrossNic(), 0) {}
 
-ncclResult_t ncclAlgoRing::topoPreset(struct ncclTopoRanks *topoRanks) {
+ncclResult_t ncclTopoRing::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
@@ -33,7 +33,7 @@ ncclResult_t ncclAlgoRing::topoPreset(struct ncclTopoRanks *topoRanks) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::connectRings(int* ringRecv, int* ringSend, int* ringPrev, int* ringNext, int* firstRanks) {
+ncclResult_t ncclTopoRing::connectRings(int* ringRecv, int* ringSend, int* ringPrev, int* ringNext, int* firstRanks) {
   int nChannels = comm->nChannels;
   int nNodes = comm->nNodes;
   for (int c=0; c<nChannels; c++) {
@@ -65,7 +65,7 @@ ncclResult_t ncclAlgoRing::connectRings(int* ringRecv, int* ringSend, int* ringP
   return ncclSuccess;
 }
 
-void ncclAlgoRing::dumpLine(int* values, int nranks, const char* prefix) {
+void ncclTopoRing::dumpLine(int* values, int nranks, const char* prefix) {
   int prefixlen = strlen(prefix);
   char line[STRLENGTH+1];
   line[STRLENGTH] = '\0';
@@ -75,7 +75,7 @@ void ncclAlgoRing::dumpLine(int* values, int nranks, const char* prefix) {
   INFO(NCCL_INIT,"%s", line);
 }
 
-ncclResult_t ncclAlgoRing::ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
+ncclResult_t ncclTopoRing::ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
   for (int r=0; r<nrings; r++) {
     char prefix[30];
     sprintf(prefix, "[%d] Channel %d Prev : ", rank, r);
@@ -112,7 +112,7 @@ ncclResult_t ncclAlgoRing::ncclBuildRings(int nrings, int* rings, int rank, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
+ncclResult_t ncclTopoRing::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext;
   int nranks = comm->nRanks;
@@ -147,7 +147,7 @@ ncclResult_t ncclAlgoRing::topoPostset(int *firstRanks, struct ncclTopoRanks **a
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::setupChannel(int channelId, int rank, int nranks, int* ringRanks) {
+ncclResult_t ncclTopoRing::setupChannel(int channelId, int rank, int nranks, int* ringRanks) {
   struct ncclRing* ring = &comm->channels[channelId].ring;
   // Reorganize ranks to start with rank.
   int shift;
@@ -162,7 +162,7 @@ ncclResult_t ncclAlgoRing::setupChannel(int channelId, int rank, int nranks, int
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::transportSetup() {
+ncclResult_t ncclTopoRing::transportSetup() {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(c, comm->rank, comm->nRanks, rings+c*comm->nRanks));
@@ -175,130 +175,44 @@ ncclResult_t ncclAlgoRing::transportSetup() {
   return ncclSuccess;
 }
 
-bool ncclAlgoRing::NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) const {
-  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
+// Enqueue
 
-  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
-  // Which index in the reorganized rings should we compare root against */
-  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
-  int index = pattern == ncclPatternPipelineFrom ?
-      /*                            no recv /  no send    if root = */
-      /* bcast  */ (type == RECV ?   myrank : nextrank ):
-      /* reduce */ (type == RECV ? prevrank :   myrank );
-  int rank = ring->userRanks[index];
-  return (root != rank);
-}
-
-ncclResult_t ncclAlgoRing::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
-  int pattern = info->pattern;
-  struct ncclRing* ring = &args->channel->ring;
-  if (NeedProxy(RECV, pattern, info->root, ring, info->comm->nRanks)) 
-    NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
-  if (NeedProxy(SEND, pattern, info->root, ring, info->comm->nRanks)) 
-    NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoRing::tuningBw(int coll, int a, int compCap80) {
-  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
-    comm->nRanks;
-  float speed = comm->nNodes <= 2 ? graph.speedIntra : graph.speedInter;
-  float busBw = graph.nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*graph.nChannels;
-  // Various model refinements
-  if (compCap80) busBw = std::min(busBw, 235.0f);
-  // Convert bus BW to algorithm BW
-  float ratio = (1.0 * comm->nRanks) / nsteps;
-  float LLRatio = (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
-  // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
-  float LL128Ratio = (float)comm->nRanks / comm->nNodes < 2 ? 0.7 : 0.92 /*120.0/128.0*/;
-
-  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * LLRatio * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
-
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoRing::tuningLat(int coll, int a) {
-  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
-    comm->nRanks;
-  int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
-    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
-    comm->nNodes;
-  int intraHw = graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
-  int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    comm->latencies[coll][a][p] = baseLat[a][p];
-    float intraLat = hwLat[intraHw][a][p];
-    float interLat = hwLat[NCCL_HW_NET][a][p];
-    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
-    float lat = hwLat[hw][a][p];
-    if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
-      if (graph.sameChannels) {
-        comm->latencies[coll][a][p] += lat;
-      } else {
-        if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
-        comm->latencies[coll][a][p] += nsteps*lat;
-      }
-    } else {
-      comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
-    }
-  }
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoRing::tuningMaxThreads(int a) {
-  this->ncclAlgoBase::tuningMaxThreads(a);
-  int simpleDefaultThreads = (graph.speedIntra * graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
-  comm->maxThreads[a][NCCL_PROTO_SIMPLE] =
-      getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
-  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
-  float lat = info->comm->latencies[info->coll][algorithm][protocol];
+ncclResult_t ncclEnqueueRing::tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const {
+  float bw = info->comm->tuning[algorithm].bandwidths[info->coll][protocol];
+  float lat = info->comm->tuning[algorithm].latencies[info->coll][protocol];
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }
+  if (info->nChannels != 0) bw = bw / info->comm->nChannels * info->nChannels;
   if (protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1 && info->coll == ncclCollAllReduce 
       && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
   *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::tuningThresholds(int a) {
-  this->ncclAlgoBase::tuningThresholds(a);
-  comm->threadThresholds[a][NCCL_PROTO_LL] *= comm->nRanks;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoRing::getPattern(int coll, int *pattern) const
+ncclResult_t ncclEnqueueRing::getPattern(int coll, int *pattern) const
 {
-  switch (coll)
-  {
-  case ncclCollBroadcast:
-    *pattern = ncclPatternPipelineFrom;
-    break;
-  case ncclCollReduce:
-    *pattern = ncclPatternPipelineTo;
-    break;
-  case ncclCollReduceScatter:
-  case ncclCollAllGather:
-    *pattern = ncclPatternRing;
-    break;
-  case ncclCollAllReduce:
-    *pattern = ncclPatternRingTwice;
-    break;
-  default:
-    *pattern = -1;
+  switch (coll) {
+    case ncclCollBroadcast:
+      *pattern = ncclPatternPipelineFrom;
+      break;
+    case ncclCollReduce:
+      *pattern = ncclPatternPipelineTo;
+      break;
+    case ncclCollReduceScatter:
+    case ncclCollAllGather:
+      *pattern = ncclPatternRing;
+      break;
+    case ncclCollAllReduce:
+      *pattern = ncclPatternRingTwice;
+      break;
+    default:
+      *pattern = -1;
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::enqueueLoopInfo(struct ncclInfo *info) const {
+ncclResult_t ncclEnqueueRing::enqueueLoopInfo(struct ncclInfo *info) const {
   switch (info->pattern) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
@@ -314,7 +228,8 @@ ncclResult_t ncclAlgoRing::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+ncclResult_t ncclEnqueueRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const
+{
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       sliceInfo->chunkSteps = info->chunkSteps;
@@ -322,9 +237,97 @@ ncclResult_t ncclAlgoRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceI
       break;
     }
     default: {
-      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
+      this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
       break;
     }
   }
+  return ncclSuccess;
+}
+
+bool ncclEnqueueRing::NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) const {
+  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
+
+  /* In chains, one rank does not need a proxy. Let's figure out which one it is */
+  // Which index in the reorganized rings should we compare root against */
+  const int myrank = 0, nextrank = 1, prevrank = nranks-1;
+  int index = pattern == ncclPatternPipelineFrom ?
+      /*                            no recv /  no send    if root = */
+      /* bcast  */ (type == RECV ?   myrank : nextrank ):
+      /* reduce */ (type == RECV ? prevrank :   myrank );
+  int rank = ring->userRanks[index];
+  return (root != rank);
+}
+
+ncclResult_t ncclEnqueueRing::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+  int pattern = info->pattern;
+  struct ncclRing* ring = &args->channel->ring;
+  if (NeedProxy(RECV, pattern, info->root, ring, info->comm->nRanks)) 
+    NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
+  if (NeedProxy(SEND, pattern, info->root, ring, info->comm->nRanks)) 
+    NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningRing::tuningBw(int coll, int a, int compCap80) {
+  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    comm->nRanks;
+  float speed = comm->nNodes <= 2 ? topo->graph.speedIntra : topo->graph.speedInter;
+  float busBw = topo->graph.nChannels * speed, LL128BusBw = ll128MaxBwPerCh[coll]*topo->graph.nChannels;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  // Convert bus BW to algorithm BW
+  float ratio = (1.0 * comm->nRanks) / nsteps;
+  float LLRatio = (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
+  // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
+  float LL128Ratio = (float)comm->nRanks / comm->nNodes < 2 ? 0.7 : 0.92 /*120.0/128.0*/;
+
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_LL] = busBw * LLRatio * ratio;
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_LL128] = std::min(busBw * LL128Ratio, LL128BusBw) * ratio;
+
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningRing::tuningLat(int coll, int a) {
+  int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    comm->nRanks;
+  int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
+    coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
+    comm->nNodes;
+  int intraHw = topo->graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  int hw = comm->nNodes == 1 ? intraHw : NCCL_HW_NET;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->tuning[a].latencies[coll][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    float lat = hwLat[hw][a][p];
+    if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
+      if (topo->graph.sameChannels) {
+        comm->tuning[a].latencies[coll][p] += lat;
+      } else {
+        if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
+        comm->tuning[a].latencies[coll][p] += nsteps * lat;
+      }
+    } else {
+      comm->tuning[a].latencies[coll][p] += (nsteps - nInterSteps) * intraLat + nInterSteps * interLat;
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningRing::tuningMaxThreads(int a) {
+  this->ncclTuningBase::tuningMaxThreads(a);
+  int simpleDefaultThreads = (topo->graph.speedIntra * topo->graph.nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
+  comm->tuning[a].maxThreads[NCCL_PROTO_SIMPLE] =
+      getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2 * WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningRing::tuningThresholds(int a) {
+  this->ncclTuningBase::tuningThresholds(a);
+  comm->tuning[a].threadThresholds[NCCL_PROTO_LL] *= comm->nRanks;
   return ncclSuccess;
 }

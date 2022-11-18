@@ -5,11 +5,11 @@
 #include "coll_net.h"
 #include "net.h"
 
-const ncclAlgoCollNet algoCollNet;
+// Topo
 
-ncclAlgoCollNet::ncclAlgoCollNet(int maxChannel): ncclAlgoBase(ncclParamCrossNic(), 1) {}
+ncclTopoCollNet::ncclTopoCollNet(struct ncclComm *comm): ncclTopoBase(NCCL_ALGO_COLLNET, comm, ncclParamCrossNic(), 1) {}
 
-ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
+ncclResult_t ncclTopoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
@@ -40,7 +40,7 @@ ncclResult_t ncclAlgoCollNet::topoPreset(struct ncclTopoRanks *topoRanks) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::ncclTopoConnectCollNet(int rank) {
+ncclResult_t ncclTopoCollNet::ncclTopoConnectCollNet(int rank) {
   int nranks = comm->nRanks;
   int depth = nranks/comm->nNodes;
   int sendIndex = graph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
@@ -74,9 +74,10 @@ ncclResult_t ncclAlgoCollNet::ncclTopoConnectCollNet(int rank) {
   return ncclSuccess;
 }
 
+// int64_t ncclParamCollNetEnable();
 NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
 
-ncclResult_t ncclAlgoCollNet::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
+ncclResult_t ncclTopoCollNet::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&
       collNetSupport() && graph.nChannels) {
@@ -92,7 +93,7 @@ extern struct ncclTransport collNetTransport;
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
 // We do not NCCLCHECK this call because we would fall back to P2P network in case CollNet setup fails
-int ncclAlgoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nranks,  int masterRank, int masterPeer, int nMasters, int type) {
+int ncclTopoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nranks,  int masterRank, int masterPeer, int nMasters, int type) {
   int rankInCollNet = -1;
   int supported = 0;
   int isMaster = (rank == masterRank) ? 1 : 0;
@@ -175,7 +176,7 @@ cleanup:
   return supported;
 }
 
-ncclResult_t ncclAlgoCollNet::checkCollNetSetup(int rank, int collNetSetupFail) {
+ncclResult_t ncclTopoCollNet::checkCollNetSetup(int rank, int collNetSetupFail) {
   int nranks = comm->nRanks;
   // AllGather collNet setup results
   int* allGatherFailures;
@@ -208,7 +209,7 @@ ncclResult_t ncclAlgoCollNet::checkCollNetSetup(int rank, int collNetSetupFail) 
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::transportSetup() {
+ncclResult_t ncclTopoCollNet::transportSetup() {
   int rank = comm->rank;
   int nranks = comm->nRanks;
   if (comm->nNodes > 1 &&
@@ -236,7 +237,9 @@ ncclResult_t ncclAlgoCollNet::transportSetup() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+// Enqueue
+
+ncclResult_t ncclEnqueueCollNet::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
   // Adjust pattern for CollNet based on channel index
   int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
   info->pattern = (channelId < info->comm->nChannels / info->nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
@@ -255,35 +258,7 @@ ncclResult_t ncclAlgoCollNet::proxySaveColl(struct ncclProxyArgs *args, struct n
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::tuningBw(int coll, int a, int compCap80) {
-  float speed = graph.speedIntra;
-  float busBw = graph.nChannels * speed;
-  // Various model refinements
-  if (compCap80) busBw = std::min(busBw, 235.0f);
-  // Convert bus BW to algorithm BW
-  float ratio = .5;
-
-  comm->bandwidths[coll][a][NCCL_PROTO_SIMPLE] = busBw * .9 * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL] = busBw * .9 * 1.0/6.0 * ratio;
-  comm->bandwidths[coll][a][NCCL_PROTO_LL128] = 0;
-
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoCollNet::tuningLat(int coll, int a) {
-  int intraHw = graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    comm->latencies[coll][a][p] = baseLat[a][p];
-    float intraLat = hwLat[intraHw][a][p];
-    float interLat = hwLat[NCCL_HW_NET][a][p];
-    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
-    comm->latencies[coll][a][p] +=
-        2 * (comm->nRanks/comm->nNodes-1) * intraLat + interLat;
-  }
-  return ncclSuccess;
-}
-
-ncclResult_t ncclAlgoCollNet::getPattern(int coll, int *pattern) const {
+ncclResult_t ncclEnqueueCollNet::getPattern(int coll, int *pattern) const {
   switch (coll) {
     case ncclCollAllReduce:
       *pattern = ncclPatternCollTreeUp; break;
@@ -293,7 +268,7 @@ ncclResult_t ncclAlgoCollNet::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
+ncclResult_t ncclEnqueueCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
   switch (info->pattern) {
     case ncclPatternCollTreeUp:
     case ncclPatternCollTreeDown:
@@ -306,7 +281,7 @@ ncclResult_t ncclAlgoCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+ncclResult_t ncclEnqueueCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       // Optimize chunkSize / nSteps
@@ -318,18 +293,18 @@ ncclResult_t ncclAlgoCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSli
       break;
     }
     default: {
-      this->ncclAlgoBase::enqueueSlice(info, sliceInfo, coll);
+      this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
       break;
     }
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclAlgoCollNet::enqueueChannelThread(struct ncclInfo *info) const {
+ncclResult_t ncclEnqueueCollNet::enqueueChannelThread(struct ncclInfo *info) const {
   ncclComm *comm = info->comm;
-  int nc = comm->nChannels / 2; // CollNet uses one channel for up and one channel for down
-  int nt = comm->maxThreads[info->algorithm][info->protocol];
-  int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
+  int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels / 2; // CollNet uses one channel for up and one channel for down
+  int nt = comm->tuning[info->algorithm].maxThreads[info->protocol];
+  int threadThreshold = comm->tuning[info->algorithm].threadThresholds[info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
     if ((nt % 128) == 0) nt/=2;
     else break;
@@ -337,5 +312,36 @@ ncclResult_t ncclAlgoCollNet::enqueueChannelThread(struct ncclInfo *info) const 
   if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
   info->nChannels = nc;
   info->nThreads = nt;
+  return ncclSuccess;
+}
+
+// Tuning
+
+ncclResult_t ncclTuningCollNet::tuningBw(int coll, int a, int compCap80) {
+  // Convert bus BW to algorithm BW
+  float ratio = .5, LLratio = 1.0/6.0;
+  float speed = topo->graph.speedIntra;
+  float busBw = topo->graph.nChannels * speed;
+  // Various model refinements
+  if (compCap80) busBw = std::min(busBw, 235.0f);
+  busBw *= .9;
+
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_SIMPLE] = busBw * ratio;
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_LL] = busBw * LLratio * ratio;
+  comm->tuning[a].bandwidths[coll][NCCL_PROTO_LL128] = 0;
+
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTuningCollNet::tuningLat(int coll, int a) {
+  int intraHw = topo->graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->tuning[a].latencies[coll][p] = baseLat[a][p];
+    float intraLat = hwLat[intraHw][a][p];
+    float interLat = hwLat[NCCL_HW_NET][a][p];
+    if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
+    comm->tuning[a].latencies[coll][p] +=
+        2 * (comm->nRanks/comm->nNodes-1) * intraLat + interLat;
+  }
   return ncclSuccess;
 }

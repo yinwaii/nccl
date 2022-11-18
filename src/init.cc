@@ -468,13 +468,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Print final topology
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
-  ncclAlgoBase *algos[NCCL_NUM_ALGORITHMS];
-  algos[NCCL_ALGO_RING] = new ncclAlgoRing;
-  NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(comm, 0, NCCL_TOPO_PATTERN_RING, comm->topo, 1, MAXCHANNELS / 2));
-  algos[NCCL_ALGO_TREE] = new ncclAlgoTree;
-  NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(comm, 1, NCCL_TOPO_PATTERN_SPLIT_TREE, comm->topo, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
-  algos[NCCL_ALGO_COLLNET] = new ncclAlgoCollNet;
-  NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(comm, 2, NCCL_TOPO_PATTERN_TREE, comm->topo, algos[NCCL_ALGO_RING]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels));
+  AlgoInfo<ncclTopoAlgo> algos = ncclTopoAlgos(comm);
+  NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(NCCL_TOPO_PATTERN_RING, 1, MAXCHANNELS / 2));
+  NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(NCCL_TOPO_PATTERN_SPLIT_TREE, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
+  NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_TOPO_PATTERN_TREE, algos[NCCL_ALGO_RING]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels));
 
   struct ncclTopoGraph *graphs[NCCL_NUM_ALGORITHMS];
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
@@ -594,9 +591,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Compute nChannels per peer for p2p
   NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, affinity_restore);
-
-  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-    delete algos[a];
   
   do {
     // Compute intra ranks (using AllGather1 data)

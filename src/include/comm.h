@@ -56,6 +56,19 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
+template <typename T>
+using ProtoInfo = std::array<T, NCCL_NUM_PROTOCOLS>;
+template <typename T>
+using AlgoInfo = std::array<T, NCCL_NUM_ALGORITHMS>;
+template <typename T>
+using FuncProtoInfo = std::array<ProtoInfo<T>, NCCL_NUM_FUNCTIONS>;
+struct ncclTuningState {
+  ProtoInfo<int> maxThreads;
+  ProtoInfo<ssize_t> threadThresholds;
+  FuncProtoInfo<float> bandwidths;
+  FuncProtoInfo<float> latencies;
+};
+
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -95,10 +108,11 @@ struct ncclComm {
   int buffSizes[NCCL_NUM_PROTOCOLS];
 
   // Algorithm/Protocols thresholds
-  ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
-  float latencies[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
-  float bandwidths[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
-  int maxThreads[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  AlgoInfo<ncclTuningState> tuning;
+  // ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  // float latencies[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  // float bandwidths[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  // int maxThreads[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
 
   // An internal CUDA stream for NCCL kernel CGMD launches
   int groupCudaStream;

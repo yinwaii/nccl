@@ -48,7 +48,7 @@ endif
 #$(info NVCC_GENCODE is ${NVCC_GENCODE})
 
 CXXFLAGS   := -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisibility=hidden \
-              -Wall -Wno-unused-function -Wno-sign-compare -std=c++11 -Wvla \
+              -Wall -Wno-unused-function -Wno-sign-compare -std=c++14 -Wvla \
               -I $(CUDA_INC) \
               $(CXXFLAGS)
 # Maxrregcount needs to be set accordingly to NCCL_MAX_NTHREADS (otherwise it will cause kernel launch errors)
