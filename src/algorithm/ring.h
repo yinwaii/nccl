@@ -30,6 +30,7 @@ private:
   bool NeedProxy(int type, int pattern, int root, struct ncclRing *ring, int nranks) const;
 
 public:
+  ncclEnqueueRing(): ncclEnqueueBase("Ring") {}
   ncclResult_t getPattern(int coll, int *pattern) const;
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
   ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
@@ -39,6 +40,21 @@ public:
 
 class ncclTuningRing: public ncclTuningBase
 {
+private:
+  // Latencies in us, Bandwidths in GB/s
+  const ProtoInfo<float> baseLat = { 3.6, 10.0, 8.4 };
+  // Tree/Simple is the latency a 256kB chunk, which is ~ base lat + 256k/12GB/s (+ 256k/12GB/s for the network).
+  const ProtoInfo<float> hwLat[3] = {
+    {.47, 1.9, 3.4}, // NVLINK
+    {1.0, 2.5, 5.7}, // PCI
+    {2.7, 4.0, 9.6}, // NET
+  };
+  const ProtoInfo<float> hwLatTree[3] = {
+      {.52, 1.25, 28}, // NVLINK
+      {1.0, 1.9, 28},  // PCI
+      {5.0, 8.5, 28},  // NET
+  };
+
 public:
   ncclTuningRing(ncclComm *comm, std::shared_ptr<ncclTopoBase> topo) : ncclTuningBase(comm, topo) {}
   ncclResult_t tuningBw(int coll, int a, int compCap80);

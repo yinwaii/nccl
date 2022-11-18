@@ -23,6 +23,8 @@ public:
 
 class ncclEnqueueBase {
 public:
+  const char *name;
+  ncclEnqueueBase(const char *name): name(name) {}
   virtual ncclResult_t getPattern(int coll, int *pattern) const;
   virtual ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
   virtual ncclResult_t enqueuePattern(struct ncclInfo *info) const;

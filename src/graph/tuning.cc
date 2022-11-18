@@ -57,7 +57,9 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1 };
+  int algoEnable[NCCL_NUM_ALGORITHMS];
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
+    algoEnable[a] = 1;
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) {

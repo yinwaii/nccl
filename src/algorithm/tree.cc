@@ -368,9 +368,9 @@ ncclResult_t ncclTuningTree::tuningBw(int coll, int a, int compCap80) {
 ncclResult_t ncclTuningTree::tuningLat(int coll, int a) {
   int intraHw = topo->graph.typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    comm->tuning[a].latencies[coll][p] = baseLat[a][p];
-    float intraLat = hwLat[intraHw][a][p];
-    float interLat = hwLat[NCCL_HW_NET][a][p];
+    comm->tuning[a].latencies[coll][p] = baseLat[p];
+    float intraLat = hwLat[intraHw][p];
+    float interLat = hwLat[NCCL_HW_NET][p];
     if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
     comm->tuning[a].latencies[coll][p] +=
         2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
