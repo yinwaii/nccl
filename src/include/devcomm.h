@@ -9,17 +9,12 @@
 
 #include "nccl.h"
 #include "align.h"
+#include "algo_config.h"
 #include <stdint.h>
 
 #define NCCL_NUM_FUNCTIONS 5 // SendRecv not included for now
 typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
-
-#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
-#define NCCL_ALGO_TREE 0
-#define NCCL_ALGO_RING 1
-#define NCCL_ALGO_COLLNET 2
-extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
 #define NCCL_PROTO_LL 0
@@ -46,7 +41,6 @@ union ncclLLFifoLine {
 };
 
 #define WARP_SIZE 32
-#define MAXCHANNELS 32
 #define NCCL_MAX_NTHREADS 640
 #define NCCL_SIMPLE_MAX_NTHREADS 512
 #define NCCL_LL_MAX_NTHREADS 512
@@ -105,26 +99,6 @@ struct ncclConnector {
   struct ncclComm *comm;
 };
 
-struct ncclRing {
-  // Shortcuts for userRanks[1] and userRanks[n-1]
-  int prev;
-  int next;
-
-  // Maps an internal nccl index to user-specified rank order. This is necessary
-  // since we need to know how the user expects data to be ordered across
-  // devices. Ordered from current device.
-  int* userRanks;
-  int* devUserRanks;
-};
-
-
-#define NCCL_MAX_TREE_ARITY 3
-struct ncclTree {
-  int depth;
-  int up;
-  int down[NCCL_MAX_TREE_ARITY];
-};
-
 struct ncclPeer {
   struct ncclConnector send;
   struct ncclConnector recv;
@@ -171,29 +145,6 @@ struct ncclWork {
   struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
 };
 static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWorkElem must have a pow2 size");
-
-struct ncclChannel {
-  union {
-    struct {
-      struct ncclRing ring;
-      struct ncclTree tree;
-      struct ncclTree collTree;
-
-      int id;
-
-      // Communication structures
-      struct ncclPeer* peers;
-      struct ncclPeer* devPeers;
-
-      // Operation list for aggregation
-      struct ncclWork* workFifo;
-      int workCount;
-      uint64_t workFifoTail; // Only used by CPU
-    };
-    int data[0x80];
-  };
-};
-static_assert(sizeof(struct ncclChannel) == 0x80*sizeof(int), "ncclChannel must have a pow2 size");
 
 struct ncclDevComm {
   int rank;

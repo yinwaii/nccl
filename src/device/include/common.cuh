@@ -9,6 +9,7 @@
 
 #include "collectives.h"
 #include "devcomm.h"
+#include "algo_config.h"
 
 
 #if __CUDA_ARCH__ >= 800
@@ -129,12 +130,13 @@ __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)(struct ncclWorkEl
   IMPL_COLL_FUNC(func, algo, LL,     redop, type) \
   IMPL_COLL_FUNC(func, algo, LL128,  redop, type) \
   IMPL_COLL_FUNC(func, algo, SIMPLE, redop, type) \
-  IMPL_COLL_KERN(func, algo, LL,     redop, type, FUNC_INDEX(ncclFunc##func, nccl##redop, ncclType, NCCL_ALGO_##algo, NCCL_PROTO_LL)) \
+  IMPL_COLL_KERN(func, algo, LL,     redop, type, FUNC_INDEX(ncclFunc##func, nccl##redop, ncclType, NCCL_ALGO_##algo, NCCL_PROTO_LL))
+
+#define IMPL_COLL4_ELE(algo, func, redop, type, ncclType) \
+  IMPL_COLL4(func, algo,    redop, type, ncclType)
 
 #define IMPL_COLL3(func, redop, type, ncclType) \
-  IMPL_COLL4(func, TREE,    redop, type, ncclType) \
-  IMPL_COLL4(func, RING,    redop, type, ncclType) \
-  IMPL_COLL4(func, COLLNET, redop, type, ncclType)
+  MAP_FOR_ALGOS(IMPL_COLL4_ELE, func, redop, type, ncclType)
 
 #if NCCL_TYPE == 0
 #define IMPL_COLL2(func, redop) IMPL_COLL3(func, redop, int8_t,   ncclInt8)

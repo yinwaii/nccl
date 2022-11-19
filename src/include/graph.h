@@ -52,10 +52,6 @@ ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count);
 // Init search. Needs to be done before calling ncclTopoCompute
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 
-#define NCCL_TOPO_PATTERN_BALANCED_TREE 1   // Spread NIC traffic between two GPUs (Tree parent + one child on first GPU, second child on second GPU)
-#define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Spread NIC traffic between two GPUs (Tree parent on first GPU, tree children on the second GPU)
-#define NCCL_TOPO_PATTERN_TREE 3            // All NIC traffic going to/from the same GPU
-#define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
   // Input / output
   int id; // ring : 0, tree : 1, collnet : 2
@@ -79,16 +75,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs);
-
-struct ncclTopoRanks {
-  int ringRecv[MAXCHANNELS];
-  int ringSend[MAXCHANNELS];
-  int ringPrev[MAXCHANNELS];
-  int ringNext[MAXCHANNELS];
-  int treeToParent[MAXCHANNELS];
-  int treeToChild0[MAXCHANNELS];
-  int treeToChild1[MAXCHANNELS];
-};
 
 struct ncclGraphInfo {
   int pattern;

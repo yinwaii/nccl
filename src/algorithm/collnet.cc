@@ -1,6 +1,4 @@
-#include "../graph/topo.h"
-#include "../graph/tuning.h"
-#include "algorithm.h"
+#include "algo_interface.h"
 #include "bootstrap.h"
 #include "coll_net.h"
 #include "net.h"

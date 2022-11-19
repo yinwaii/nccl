@@ -3,6 +3,7 @@
  *
  * See LICENSE.txt for license information
  ************************************************************************/
+#include "algo_config.h"
 
 #ifndef NCCL_COLLECTIVES_H_
 #define NCCL_COLLECTIVES_H_
@@ -15,6 +16,8 @@
 
 #define NCCL_KERN_NAME(func, algo, proto, redop, type) \
   ncclKernel_##func##_##algo##_##proto##_##redop##_##type
+
+#define WITH_COMMA(content) content,
 
 #define NCCL_IMPL_NAME(func, algo, proto) \
   nccl##func##algo##proto
@@ -29,10 +32,11 @@
   DECL5(func, algo, LL,     redop, type) \
   DECL5(func, algo, LL128,  redop, type)
 
+#define DECL4_ELE(algo, func, redop, type) \
+  DECL4(func, algo, redop, type)
+
 #define DECL3(func, redop, type) \
-  DECL4(func, RING,    redop, type) \
-  DECL4(func, TREE,    redop, type) \
-  DECL4(func, COLLNET, redop, type)
+  MAP_FOR_ALGOS(DECL4_ELE, func, redop, type)
 
 #define DECL2(func, redop) \
   DECL3(func, redop, int8_t) \

@@ -1,5 +1,5 @@
 #include "base.h"
-#include "../graph/tuning.h"
+#include "algo_interface.h"
 
 // Topo
 

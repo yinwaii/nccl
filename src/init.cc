@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #include "nccl.h"
-#include "algorithm.h"
+#include "algo_interface.h"
 #include "interface.h"
 #include "channel.h"
 #include "nvmlwrap.h"
@@ -514,9 +514,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
   AlgoInfo<ncclTopoAlgo> algos = ncclTopoAlgos(comm);
-  NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(NCCL_TOPO_PATTERN_RING, 1, MAXCHANNELS / 2));
-  NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(tmpNnodes <= 2 ? NCCL_TOPO_PATTERN_TREE : NCCL_TOPO_PATTERN_BALANCED_TREE, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
-  NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_TOPO_PATTERN_TREE, algos[NCCL_ALGO_RING]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels));
+  NCCLCHECK(ncclTopoInit(algos, tmpNnodes));
 
   struct ncclTopoGraph *graphs[NCCL_NUM_ALGORITHMS];
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)

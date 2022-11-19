@@ -1,7 +1,7 @@
 #include "ring.h"
 #include "tree.h"
 #include "collnet.h"
-#include "algorithm.h"
+#include "algo_interface.h"
 
 AlgoInfo<ncclTopoAlgo> ncclTopoAlgos(struct ncclComm *comm) {
 	AlgoInfo<ncclTopoAlgo> topoAlgos;
@@ -9,6 +9,13 @@ AlgoInfo<ncclTopoAlgo> ncclTopoAlgos(struct ncclComm *comm) {
 	topoAlgos[NCCL_ALGO_RING] = std::make_shared<ncclTopoRing>(comm);
 	topoAlgos[NCCL_ALGO_COLLNET] = std::make_shared<ncclTopoCollNet>(comm);
 	return topoAlgos;
+}
+
+ncclResult_t ncclTopoInit(const AlgoInfo<ncclTopoAlgo> &algos, int tmpNnodes) {
+	NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(NCCL_TOPO_PATTERN_RING, 1, MAXCHANNELS / 2));
+	NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(tmpNnodes <= 2 ? NCCL_TOPO_PATTERN_TREE : NCCL_TOPO_PATTERN_BALANCED_TREE, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
+	NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_TOPO_PATTERN_TREE, algos[NCCL_ALGO_RING]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels));
+	return ncclSuccess;
 }
 
 AlgoInfo<ncclTuningAlgo> ncclTuningAlgos(struct ncclComm *comm, AlgoInfo<ncclTopoAlgo> topoAlgos) {

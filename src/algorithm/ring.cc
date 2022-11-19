@@ -1,6 +1,4 @@
-#include "algorithm.h"
-#include "../graph/tuning.h"
-#include "../graph/topo.h"
+#include "algo_interface.h"
 #define MAXWIDTH 20
 #define PREFIXLEN 15
 #define STRLENGTH (PREFIXLEN + 5 * MAXWIDTH)
