@@ -85,7 +85,6 @@ ncclResult_t ncclEnqueueBase::enqueueSlice(struct ncclInfo *info, struct ncclSli
 
 ncclResult_t ncclEnqueueBase::enqueueChannelThread(struct ncclInfo *info) const {
   ncclComm *comm = info->comm;
-  1 + 1;
   int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels; // CollNet uses one channel for up and one channel for down
   int nt = info->comm->tuning[info->algorithm].maxThreads[info->protocol];
   int threadThreshold = comm->tuning[info->algorithm].threadThresholds[info->protocol];

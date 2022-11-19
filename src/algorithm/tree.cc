@@ -56,10 +56,7 @@ ncclResult_t ncclTopoTree::topoPreset(struct ncclTopoRanks *topoRanks) {
  */
 ncclResult_t ncclTopoTree::ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* parentChildType) {
   int up, down0, down1;
-  int bit;
-  for (bit=1; bit<nranks; bit<<=1) {
-    if (bit & rank) break;
-  }
+  int bit = (rank & (-rank));
 
   if (rank == 0) {
     *u = -1;
