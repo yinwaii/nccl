@@ -207,13 +207,13 @@ class ncclLLPrimitives {
  public:
   __device__ __forceinline__ ncclLLPrimitives(
       const int tid, const int nthreads, int* recvPeers, int* sendPeers, 
-      int stepLines, struct ncclChannel* channel, struct ncclDevComm* comm
+      T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm, int group = 0
       ): 
       comm(comm), 
       tid(tid), 
       nthreads(nthreads), 
       wid(tid%WARP_SIZE), 
-      stepLines(stepLines), 
+      stepLines(comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS)), 
       func(FuncTraits<FUNC>().make(comm->nRanks)) {
     // Make sure step is updated before we read it.
     barrier();

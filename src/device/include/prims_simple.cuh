@@ -23,8 +23,7 @@ class ncclPrimitives {
    int nthreads;
    int nworkers;
    const int stepSize;
-   int nrecv = 0;
-   int nsend = 0;
+   Fan fan;
   struct ncclConnInfo* conn = NULL;
   volatile int* connSizesFifoPtr = NULL;
   void** connPtrsFifoPtr = NULL;
@@ -105,7 +104,7 @@ class ncclPrimitives {
       *connTailPtr = step += StepPerSlice;
   }
 
-  template <int DIRECTRECV, int DIRECTSEND, int Recv, int Send, int SRC, int DST>
+  template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
   inline __device__ void GenericOp(
       const T* srcPtr, T* dstPtr, int nelem, ssize_t directOffset
     ) {
@@ -144,21 +143,27 @@ class ncclPrimitives {
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       sliceSize = max(0, min(sliceSize, nelem-offset));
       if (tid < nworkers) {
-        if (SRC && (flags & RoleInput)) srcs[0] = srcPtr+offset;
-        if (DST && (flags & RoleOutput)) dsts[0] = dstPtr+offset;
-        waitPeer<DIRECTRECV, DIRECTSEND, Recv, Send, SRC, DST>(directOffset, directOffset, offset, sliceSize);
+        if (Src && (flags & RoleInput)) srcs[0] = srcPtr+offset;
+        if (Dst && (flags & RoleOutput)) dsts[0] = dstPtr+offset;
+        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(directOffset, directOffset, offset, sliceSize);
         if (sliceSize > 0) {
           subBarrier();
-          if (DIRECTRECV && srcs[0] == dsts[0]) {
+          if (DirectRecv && srcs[0] == dsts[0]) {
             // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
             if (Send) {
               // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and SEND=0).
               ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
-                (tid, nworkers, RedOp(), false, false, 1, srcs, nsend, dsts+1, sliceSize);
+                (tid, nworkers, RedOp(), false, false, 
+                 1, srcs,
+                fan.nsend(), dsts+1,
+                sliceSize);
             }
           } else {
-            ReduceOrCopyMulti<Unroll, RedOp, T, Recv+SRC, Recv*MaxRecv+SRC, Send+DST, Send*MaxSend+DST>
-              (tid, nworkers, RedOp(), false, false, Recv*nrecv+SRC, srcs, Send*nsend+DST, dsts, sliceSize);
+            ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst>
+              (tid, nworkers, RedOp(), false, false, 
+               Recv*fan.nrecv()+Src, srcs, 
+               Send*fan.nsend()+Dst, dsts,
+               sliceSize);
           }
         }
       }
@@ -219,24 +224,24 @@ class ncclPrimitives {
  public:
   __device__ __forceinline__ ncclPrimitives(
       const int tid, const int nthreads, int* recvPeers, int* sendPeers, 
-      T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, struct ncclShmemPtrs* ptrs, int group
+      T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm, int group = 0
       ): 
     comm(comm), 
     tid(tid), 
     nworkers(nworkers), 
-    stepSize(stepSize), 
-    srcs((const T**)ptrs[group].srcs), 
-    dsts((T**)ptrs[group].dsts) {
+    stepSize(comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)), 
+    srcs((const T**)ncclShmem->ptrs[group].srcs), 
+    dsts((T**)ncclShmem->ptrs[group].dsts) {
+
     // For send operations, we need an extra warp to overlap the threadfence and the copy
     this->nthreads = nthreads;
     this->nworkers = nthreads - (MaxSend && nworkers >= 64 ? WARP_SIZE : 0);
     this->group = group;
 
-    // Make sure step is updated before we read it.
-    barrier();
-
-    for (int i=0; i<MaxRecv; i++) if (recvPeers[i] != -1) nrecv++;
-    for (int i=0; i<MaxSend; i++) if (sendPeers[i] != -1) nsend++;
+    int nrecv=0, nsend=0;
+    while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;
+    while (nsend < MaxSend && sendPeers[nsend] != -1) nsend++;
+    this->fan = Fan(nrecv, nsend);
 
     constexpr int ThreadPerSync = 8;
     static_assert(MaxSend < ThreadPerSync && MaxRecv < ThreadPerSync, "Not enough threads to cover all peers");

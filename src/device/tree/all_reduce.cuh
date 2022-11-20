@@ -33,7 +33,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
     if (tid < nthreads+WARP_SIZE) {
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
       ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DEV_ARITY, 1, 0, FUNC>
-        prims(tid, args->nThreads, tree->down, &tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        prims(tid, args->nThreads, tree->down, &tree->up, NULL, channel, comm, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -51,7 +51,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
     if (tid < nthreads+WARP_SIZE) {
       // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
       ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DEV_ARITY, 1, FUNC>
-        prims(tid, args->nThreads, &tree->up, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        prims(tid, args->nThreads, &tree->up, tree->down, thisOutput, channel, comm, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -141,7 +141,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
 
     do {
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-      ncclLLPrimitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, stepLines, channel, comm);
+      ncclLLPrimitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, NULL, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -158,7 +158,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
 
     do {
       // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-      ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, stepLines, channel, comm);
+      ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, NULL, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -203,7 +203,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
 
     if (tree->up == -1) {
       // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
-      ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, tree->down, tree->down, stepSize, channel, comm);
+      ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, tree->down, tree->down, NULL, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*chunkSize;
         int nelem = min(chunkSize, size-offset);
@@ -212,7 +212,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
     } else {
       if (tid < nthreadsSplit) {
         // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-        ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreadsSplit, tree->down, &tree->up, stepSize, channel, comm);
+        ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreadsSplit, tree->down, &tree->up, NULL, channel, comm);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           // Up
           ssize_t offset = gridOffset + bid*chunkSize;
@@ -225,7 +225,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
         }
       } else {
         // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-        ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, stepSize, channel, comm);
+        ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, NULL, channel, comm);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           // Down
           ssize_t offset = gridOffset + bid*chunkSize;

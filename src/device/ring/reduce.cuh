@@ -29,7 +29,7 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
       T * __restrict__ thisOutput = (T*)args->recvbuff;
 
       ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, 1, 1, 0, FUNC>
-        prims(tid, args->nThreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        prims(tid, args->nThreads, &ring->prev, &ring->next, NULL, channel, comm, 0);
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
@@ -67,7 +67,7 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROL
       const int prevRank = ring->devUserRanks[nranks-1];
       const int root = args->coll.root;
 
-      ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepLines, channel, comm);
+      ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
 
       // Compute pointers
       const T * __restrict__ thisInput = (const T*)args->sendbuff;
@@ -113,7 +113,7 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UN
       const int prevRank = ring->devUserRanks[nranks-1];
       const int root = args->coll.root;
 
-      ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepSize, channel, comm);
+      ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
 
       // Compute pointers
       const T * __restrict__ thisInput = (const T*)args->sendbuff;
