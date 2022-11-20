@@ -141,7 +141,7 @@ private:
       //     barrier();
       //     post();
       //   } // Since we no longer unroll, new branch added here
-#pragma unroll 1
+#pragma unroll
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       sliceSize = max(0, min(sliceSize, nelem-offset));
       if (tid < nworkers) {
@@ -226,20 +226,27 @@ private:
  public:
   __device__ __forceinline__ Primitives(
       const int tid, const int nthreads, int* recvPeers, int* sendPeers, 
-      T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm, int group = 0
+      T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm, int group = 0, bool p2p = false
       ): 
     comm(comm), 
     tid(tid), 
-    nworkers(nworkers), 
     stepSize(comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)), 
     srcs((const T**)ncclShmem->ptrs[group].srcs), 
     dsts((T**)ncclShmem->ptrs[group].dsts),
     group(group) {
 
-    // For send operations, we need an extra warp to overlap the threadfence and the copy
-    this->nthreads = nthreads;
-    this->nworkers = nthreads - (MaxSend && nworkers >= 64 ? WARP_SIZE : 0);
-    this->group = group;
+    // if p2p is true, then we use 2nd argument as nworkers, otherwise as nthreads
+    if (p2p) {
+      nworkers = nthreads;
+      // For send operations, we need an extra warp to overlap the threadfence and the copy
+      int postThreads = MaxSend && nworkers >= 64 ? WARP_SIZE : 0;
+      this->nthreads = nworkers + postThreads;
+    }
+    else {
+      // For send operations, we need an extra warp to overlap the threadfence and the copy
+      this->nthreads = nthreads;
+      this->nworkers = nthreads - (MaxSend && nworkers >= 64 ? WARP_SIZE : 0);
+    }
 
     int nrecv=0, nsend=0;
     while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;

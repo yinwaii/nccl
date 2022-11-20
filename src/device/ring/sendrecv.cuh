@@ -52,7 +52,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, RedOp, T
               int peer = (comm->rank-delta+comm->nRanks)%comm->nRanks;
               int nt = nThreadsSplit;
               Primitives<T, RedOp, FanAsymmetric<1, 0>, 1, ProtoSimple<1, 1, UNROLL>>
-                prims(tid, nt, &peer, NULL, recvbuff, channel, comm, groupRecv);
+                prims(tid, nt, &peer, NULL, recvbuff, channel, comm, groupRecv, true);
 
               if (recvCount == 0) {
                 prims.recv(recvbuff, 0);
@@ -67,7 +67,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, RedOp, T
               int peer = (comm->rank+delta)%comm->nRanks;
               int nt = nThreads-nThreadsSplit;
               Primitives<T, RedOp, FanAsymmetric<0,1>, 1, ProtoSimple<1, 1, UNROLL>>
-                prims(tid-nThreadsSplit, nt + (nt >= 64 ? WARP_SIZE : 0), NULL, &peer, recvbuff, channel, comm, groupSend);
+                prims(tid-nThreadsSplit, nt, NULL, &peer, recvbuff, channel, comm, groupSend, true);
 
               if (sendCount == 0) {
                 prims.send(sendbuff, 0);
