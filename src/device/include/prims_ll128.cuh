@@ -13,6 +13,7 @@
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLL128Primitives {
  private:
+  FUNC func;
   const int tid;
   const int nthreads;
   const int wid;
@@ -184,8 +185,8 @@ class ncclLL128Primitives {
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         load128(ptr+u*WARP_SIZE, v0, v1);
-        v[u] = SRC ? MULTI<FUNC, T>()(v0, v[u]) : v0;
-        v[u+1] = SRC ? MULTI<FUNC, T>()(v1, v[u+1]) : v1;
+        v[u] = SRC ? MULTI<FUNC, T>()(func, v0, v[u]) : v0;
+        v[u+1] = SRC ? MULTI<FUNC, T>()(func, v1, v[u+1]) : v1;
       }
 
       for (int i=1; i<NRECV && i<nrecv; i++) {
@@ -203,8 +204,8 @@ class ncclLL128Primitives {
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           load128(ptr+u*WARP_SIZE, v0, v1);
-          v[u] = MULTI<FUNC, T>()(v0, v[u]);
-          v[u+1] = MULTI<FUNC, T>()(v1, v[u+1]);
+          v[u] = MULTI<FUNC, T>()(func, v0, v[u]);
+          v[u+1] = MULTI<FUNC, T>()(func, v1, v[u+1]);
         }
       }
     }
@@ -347,7 +348,7 @@ class ncclLL128Primitives {
  public:
   __device__ __forceinline__
   ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem->data+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem->data+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid), func(FuncTraits<FUNC>().make(comm->nRanks)) {
     // Make sure step is updated before we read it.
     barrier();
 

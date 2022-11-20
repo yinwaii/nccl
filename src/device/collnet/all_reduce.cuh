@@ -31,7 +31,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
       ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC>
-        prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        prims(tid, args->nThreads, tree->down, &tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
         ssize_t offset = gridOffset + bid*chunkSize;

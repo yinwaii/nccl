@@ -9,6 +9,9 @@
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLLPrimitives {
  private:
+  static constexpr int MaxRecv = NRECV, MaxSend = NSEND;
+  static constexpr int Input=0, Output=1;
+  FUNC func;
   const int tid;
   const int nthreads;
   const int wid;
@@ -25,10 +28,10 @@ class ncclLLPrimitives {
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
 
-  uint64_t recvStep[NRECV];
-  uint64_t sendStep[NSEND];
-  union ncclLLFifoLine* recvBuff[NRECV];
-  union ncclLLFifoLine* sendBuff[NSEND];
+  uint64_t recvStep[MaxRecv];
+  uint64_t sendStep[MaxSend];
+  union ncclLLFifoLine* recvBuff[MaxRecv];
+  union ncclLLFifoLine* sendBuff[MaxSend];
   struct ncclDevComm* comm;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepLines; }
@@ -115,15 +118,20 @@ class ncclLLPrimitives {
     memcpy((char*)dst, (char*)&val, nbytes);
   }
 
+
+
+
+
+
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem) {
-    uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
-    uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
     uint64_t* dstPack = (uint64_t*)dstPtr;
     int offset = tid;
 
     // Always waitSend in case of cleanup
+    uint32_t nbytes = nelem < 0 ? 0 : nelem * sizeof(T);
+    uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     if (SEND) waitSend(npack*sizeof(union ncclLLFifoLine));
 
     // Do multiples of 64 bits
@@ -131,16 +139,17 @@ class ncclLLPrimitives {
     for (; offset<npack; offset+=nthreads) {
       // Recv : local, then intra-node, then inter-node
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
+
       if (RECV) {
-        if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
+        if (SRC) val = MULTI<FUNC, T>()(func, readLL(0, offset), val);
         for (int i=1; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(readLL(i, offset), val);
+          val = MULTI<FUNC, T>()(func, readLL(i, offset), val);
         }
       }
 
       // Send : inter-node, then intra-node, then local
       if (SEND) {
-        for (int i=1; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
+        for (int i=1; i < MaxSend && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
         storeLL(sendPtr(0)+offset, val, sendFlag(0));
       }
       if (DST) {
@@ -152,8 +161,19 @@ class ncclLLPrimitives {
         }
       }
     }
-    FOR_RECV(incRecv); if (RECV) postRecv();
-    FOR_SEND(incSend, offset);
+
+    if (RECV) { 
+      /* Recv from close first, then far */ 
+      incRecv(0); 
+      for (int i=1; i<MaxRecv && i<nrecv; i++) incRecv(i);
+      postRecv();
+    } 
+    if (SEND) { 
+      /* Send to far first, then close */ 
+      for (int i=1; i<MaxSend && i<nsend; i++)
+          incSend(i, offset);
+      incSend(0, offset);
+    }
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
@@ -184,31 +204,43 @@ class ncclLLPrimitives {
     }
   }
 
-  __device__ __forceinline__ void saveRecvSync() {
+ public:
+  __device__ __forceinline__ ncclLLPrimitives(
+      const int tid, const int nthreads, int* recvPeers, int* sendPeers, 
+      int stepLines, struct ncclChannel* channel, struct ncclDevComm* comm
+      ): 
+      comm(comm), 
+      tid(tid), 
+      nthreads(nthreads), 
+      wid(tid%WARP_SIZE), 
+      stepLines(stepLines), 
+      func(FuncTraits<FUNC>().make(comm->nRanks)) {
+    // Make sure step is updated before we read it.
+    barrier();
+
+    int nrecv=0, nsend=0;
+    while (nrecv < MaxRecv && recvPeers[nrecv] >= 0) {
+      loadRecvConn(&channel->devPeers[recvPeers[nrecv]].recv.conn, nrecv);
+      nrecv++;
+    }
+    while (nsend < MaxSend && sendPeers[nsend] >= 0) {
+      loadSendConn(&channel->devPeers[sendPeers[nsend]].send.conn, nsend);
+      nsend++;
+    }
+    loadRecvSync();
+    loadSendSync();
+  }
+
+  __device__ __forceinline__ ~ncclLLPrimitives() {
+    // Save steps for the next operation
     if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
       recvConn->step = recvConnHead;
       __threadfence_block();
     }
-  }
-
-  __device__ __forceinline__ void saveSendSync() {
     if (tid < nsend) {
       sendConn->step = sendConnHead;
       __threadfence_block();
     }
-  }
-
- public:
-  __device__ __forceinline__
-  ncclLLPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepLines, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(stepLines) {
-    // Make sure step is updated before we read it.
-    barrier();
-
-    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
-    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
-    loadRecvSync();
-    loadSendSync();
   }
 
   __device__ void send(const T* src, int nelem) {
@@ -237,12 +269,6 @@ class ncclLLPrimitives {
 
   __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
     return LLGenericOp<1, 1, 1, 1>(src, dst, nelem);
-  }
-
-  __device__ __forceinline__ ~ncclLLPrimitives() {
-    // Save steps for the next operation
-    saveRecvSync();
-    saveSendSync();
   }
 };
 
