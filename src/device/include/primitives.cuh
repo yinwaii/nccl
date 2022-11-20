@@ -131,26 +131,23 @@ template<typename T, typename RedOp, typename Fan, int Direct, typename Proto>
 class Primitives;
 
 // Used by LL & LL128 to implement direct members in the naive way.
-template<typename RealPrimitives>
+template<typename RealPrimitives, typename T>
 struct PrimitivesWithoutDirect {
-  __device__ void directSend(intptr_t inpIx, intptr_t remoteOutIx, int eltN) {
-    static_cast<RealPrimitives*>(this)->send(inpIx, eltN);
+  __device__ void directSend(const T* src, ssize_t directOffset, int nelem) {
+    static_cast<RealPrimitives*>(this)->send(src, nelem);
   }
-  __device__ void directSendFromOutput(intptr_t outIx, intptr_t remoteOutIx, int eltN) {
-    static_cast<RealPrimitives*>(this)->sendFromOutput(outIx, eltN);
+  __device__ void directRecv(T* dst, ssize_t directOffset, int nelem) {
+    static_cast<RealPrimitives*>(this)->recv(dst, nelem);
   }
-  __device__ void directRecv(intptr_t outIx, int eltN) {
-    static_cast<RealPrimitives*>(this)->recv(outIx, eltN, /*postOp=*/false);
+  __device__ void directCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
+    static_cast<RealPrimitives*>(this)->copySend(src, dst, nelem);
   }
-  __device__ void directCopySend(intptr_t inpIx, intptr_t outIx, intptr_t remoteOutIx, int eltN, bool postOp=false) {
-    static_cast<RealPrimitives*>(this)->copySend(inpIx, outIx, eltN, postOp);
+  __device__ void directRecvCopySend(T* dst, ssize_t directOffset, int nelem) {
+    static_cast<RealPrimitives*>(this)->recvCopySend(dst, nelem);
   }
-  __device__ void directRecvCopySend(intptr_t outIx, intptr_t remoteOutIx, int eltN) {
-    static_cast<RealPrimitives*>(this)->recvCopySend(outIx, eltN, /*postOp=*/false);
-  }
-  __device__ void directRecvReduceCopySend(intptr_t inpIx, intptr_t outIx, intptr_t remoteOutIx, int eltN, bool postOp=false) {
+  __device__ void directRecvReduceCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
     // Direct is only for the send part
-    static_cast<RealPrimitives*>(this)->recvReduceCopySend(inpIx, outIx, eltN, postOp);
+    static_cast<RealPrimitives*>(this)->recvReduceCopySend(src, dst, nelem);
   }
 };
 

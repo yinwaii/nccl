@@ -4,21 +4,19 @@
 #include "devcomm.h"
 #include "primitives.cuh"
 
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
-  public:
-    __device__ void run(struct ncclWorkElem* args) {
-      const int tid = threadIdx.x;
-      const int nthreads = args->nThreads-WARP_SIZE;
+namespace {
+  template<typename T, typename RedOp, typename Proto>
+  __device__ void runRing(ncclWorkElem *args) {
+          const int tid = threadIdx.x;
+      const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclDevComm* comm = args->comm;
       struct ncclChannel* channel = comm->channels+blockIdx.x;
       struct ncclRing* ring = &channel->ring;
-      const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
-      const int chunkSize = stepSize * REDUCE_CHUNKSTEPS;
+      const ssize_t chunkSize = int(Proto::calcBytePerStep(comm)/sizeof(T) * (Proto::Id == NCCL_PROTO_SIMPLE ? REDUCE_CHUNKSTEPS : 1));
       const int nranks = comm->nRanks;
-      const ssize_t loopSize = nChannels*(ssize_t)chunkSize;
+      const ssize_t loopSize = nChannels*chunkSize;
       const ssize_t size = args->coll.count;
       const int rank = ring->devUserRanks[0];
       const int prevRank = ring->devUserRanks[nranks-1];
@@ -28,12 +26,21 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
       const T * __restrict__ thisInput = (const T*)args->sendbuff;
       T * __restrict__ thisOutput = (T*)args->recvbuff;
 
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoSimple<REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, UNROLL>>
+      Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
         prims(tid, args->nThreads, &ring->prev, &ring->next, NULL, channel, comm, 0);
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
-        ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+        int realChunkSize;
+        if (Proto::Id == NCCL_PROTO_SIMPLE) {
+          realChunkSize = min(chunkSize, divUp(size-gridOffset, nChannels));
+          realChunkSize = roundUp(realChunkSize, (nthreads-WARP_SIZE)*sizeof(uint64_t)/sizeof(T));
+        }
+        else if (Proto::Id == NCCL_PROTO_LL)
+          realChunkSize = size-gridOffset < loopSize ? args->coll.lastChunkSize : chunkSize;
+        else if (Proto::Id == NCCL_PROTO_LL128) {
+          const ssize_t minChunkSize = int(nthreads * (Proto::calcBytePerGrain() / sizeof(T)));
+          realChunkSize = min(divUp(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
+        }
         ssize_t offset = gridOffset + bid*realChunkSize;
         int nelem = min(realChunkSize, size-offset);
         if (prevRank == root) {
@@ -44,94 +51,32 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
           prims.recvReduceSend(thisInput+offset, nelem);
         }
       }
+  }
+}
+
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
+  public:
+    __device__ void run(struct ncclWorkElem* args) {
+      using Proto = ProtoSimple<REDUCE_CHUNKSTEPS / REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, UNROLL>;
+      runRing<T, RedOp, Proto>(args);
     }
 };
 
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, RedOp, T, UNROLL> {
   public:
     __device__ void run(struct ncclWorkElem* args) {
-      const int tid = threadIdx.x;
-      const int nthreads = args->nThreads;
-      const int bid = args->coll.bid;
-      const int nChannels = args->coll.nChannels;
-      struct ncclDevComm* comm = args->comm;
-      struct ncclChannel* channel = comm->channels+blockIdx.x;
-      struct ncclRing* ring = &channel->ring;
-      const int stepLines = comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS);
-      ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
-      const int nranks = comm->nRanks;
-      const ssize_t loopSize = nChannels*chunkSize;
-      const ssize_t size = args->coll.count;
-      const int rank = comm->rank;
-      const int prevRank = ring->devUserRanks[nranks-1];
-      const int root = args->coll.root;
-
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 1, ProtoLL> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
-
-      // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        if (size-gridOffset < loopSize) {
-          chunkSize = args->coll.lastChunkSize;
-        }
-        ssize_t offset = gridOffset + bid*chunkSize;
-
-        int nelem = min(chunkSize, size-offset);
-        if (prevRank == root) {
-          LLprims.send(thisInput+offset, nelem);
-        } else if (rank == root) {
-          LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else {
-          LLprims.recvReduceSend(thisInput+offset, nelem);
-        }
-      }
+      runRing<T, RedOp, ProtoLL>(args);
     }
 };
 
 #include "prims_ll128.cuh"
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, RedOp, T, UNROLL> {
   public:
     __device__ void run(struct ncclWorkElem* args) {
-      const int tid = threadIdx.x;
-      const int nthreads = args->nThreads;
-      const int bid = args->coll.bid;
-      const int nChannels = args->coll.nChannels;
-      struct ncclDevComm* comm = args->comm;
-      struct ncclChannel* channel = comm->channels+blockIdx.x;
-      struct ncclRing* ring = &channel->ring;
-      const int stepSize = comm->buffSizes[NCCL_PROTO_LL128] / (sizeof(uint64_t)*NCCL_STEPS);
-      ssize_t chunkSize = stepSize*NCCL_LL128_DATAELEMS*sizeof(uint64_t) / (NCCL_LL128_LINEELEMS*sizeof(T));
-      const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T));
-      const int nranks = comm->nRanks;
-      const ssize_t loopSize = nChannels*chunkSize;
-      const ssize_t size = args->coll.count;
-      const int rank = comm->rank;
-      const int prevRank = ring->devUserRanks[nranks-1];
-      const int root = args->coll.root;
-
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 1, ProtoLL128> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
-
-      // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
-        ssize_t offset = gridOffset + bid*chunkSize;
-
-        int nelem = min(chunkSize, size-offset);
-        if (prevRank == root) {
-          LLprims.send(thisInput+offset, nelem);
-        } else if (rank == root) {
-          LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else {
-          LLprims.recvReduceSend(thisInput+offset, nelem);
-        }
-      }
+      runRing<T, RedOp, ProtoLL128>(args);
     }
 };
 

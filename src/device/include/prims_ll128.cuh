@@ -12,7 +12,7 @@
 
 template<typename T, typename RedOp, typename Fan, int Direct>
 class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
-  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL128>> {
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL128>, T> {
  private:
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   RedOp redOp;

@@ -8,7 +8,7 @@
 #define __PRIMS_LL_H__
 template<typename T, typename RedOp, typename Fan, int Direct>
 class Primitives<T, RedOp, Fan, Direct, ProtoLL>:
-  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL>> {
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL>, T> {
 
  private:
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;

@@ -4,20 +4,18 @@
 #include "devcomm.h"
 #include "primitives.cuh"
 
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
-  public:
-  __device__ void run(struct ncclWorkElem* args) {
+namespace {
+  template<typename T, typename RedOp, typename Proto>
+  __device__ void runCollNet(ncclWorkElem *args) {
     const int tid = threadIdx.x;
-    const int nthreads = args->nThreads-WARP_SIZE;
+    const int nthreads = args->nThreads;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
     struct ncclTree* tree = &channel->collTree;
-    const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
-    int chunkSize = args->coll.lastChunkSize;
-    const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
+    int chunkSize = (Proto::Id == NCCL_PROTO_SIMPLE ? args->coll.lastChunkSize : (Proto::calcBytePerStep(comm) / sizeof(T)));
+    const ssize_t minChunkSize = (Proto::Id == NCCL_PROTO_SIMPLE ? ((nthreads - WARP_SIZE) * 8) : nthreads)* sizeof(uint64_t) / sizeof(T);
     const ssize_t loopSize = nChannels*chunkSize;
     const ssize_t size = args->coll.count;
 
@@ -30,7 +28,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoSimple<1, 1, UNROLL>>
+      Primitives<T, RedOp, FanAsymmetric<1, 1>, 0, Proto>
         prims(tid, args->nThreads, tree->down, &tree->up, NULL, channel, comm, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
@@ -47,7 +45,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     }
 
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoSimple<1, 1, UNROLL>>
+      Primitives<T, RedOp, FanAsymmetric<1, 1>, 0, Proto>
         prims(tid, nthreads, &tree->up, tree->down, NULL, channel, comm, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
@@ -63,64 +61,21 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       }
     }
   }
-};
+}
 
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T, UNROLL> {
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
   public:
   __device__ void run(struct ncclWorkElem* args) {
-    const int tid = threadIdx.x;
-    const int nthreads = args->nThreads;
-    const int bid = args->coll.bid;
-    const int nChannels = args->coll.nChannels;
-    struct ncclDevComm* comm = args->comm;
-    struct ncclChannel* channel = comm->channels+blockIdx.x;
-    struct ncclTree* tree = &channel->collTree;
-    const int stepLines = comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS);
-    ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
-    const ssize_t minChunkSize = nthreads*sizeof(uint64_t) / sizeof(T);
-    const ssize_t loopSize = nChannels*chunkSize;
-    const ssize_t size = args->coll.count;
+    runCollNet<T, RedOp, ProtoSimple<1, 1, UNROLL>>(args);
+  }
+};
 
-    if (loopSize > size) {
-      chunkSize = DIVUP(size, nChannels*minChunkSize)*minChunkSize;
-    }
-
-    // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-    if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoLL> LLprims(tid, nthreads, tree->down, &tree->up, NULL, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Up
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
-          LLprims.send(thisInput+offset, nelem);
-        } else {
-          LLprims.recvReduceSend(thisInput+offset, nelem);
-        }
-      }
-    }
-
-    if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoLL> LLprims(tid, nthreads, &tree->up, tree->down, NULL, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Down
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          LLprims.send(thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
-          LLprims.recv(thisOutput+offset, nelem);
-        } else {
-          LLprims.recvCopySend(thisOutput+offset, nelem);
-        }
-      }
-    }
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, RedOp, T, UNROLL> {
+  public:
+  __device__ void run(struct ncclWorkElem* args) {
+    runCollNet<T, RedOp, ProtoLL>(args);
   }
 };
 #endif
