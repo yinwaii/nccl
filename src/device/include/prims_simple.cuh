@@ -2,28 +2,30 @@
 #define __PRIMS_SIMPLE_H__
 
 // Implementation of primitive types
-template <int Unroll, int SlicePerChunk, int StepPerSlice, typename T, int NRECV, int NSEND, int Direct, class RedOp>
-class ncclPrimitives {
- private:
-   using Fan = FanAsymmetric<NRECV,NSEND>;
-   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
-   static constexpr int Input=0, Output=1;
-   static constexpr int RoleInput = 0x01,
-                        RoleOutput = 0x02,
-                        RoleWaitRecv = 0x04,
-                        RoleWaitSend = 0x08,
-                        RolePostSend = 0x10,
-                        RolePostRecv = 0x20,
-                        Aborted = 0x40,
-                        PtrsFifoEnabled = 0x80,
-                        SizesFifoEnabled = 0x100,
-                        DirectEnabled = 0x200,
-                        ThreadsSynced = 0x400;
-   const int tid;
-   int nthreads;
-   int nworkers;
-   const int stepSize;
-   Fan fan;
+template <typename T, typename RedOp, typename Fan, int Direct,
+          int SlicePerChunk, int StepPerSlice, int Unroll>
+class Primitives<
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll>>
+{
+private:
+  static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
+  static constexpr int Input = 0, Output = 1;
+  static constexpr int RoleInput = 0x01,
+                       RoleOutput = 0x02,
+                       RoleWaitRecv = 0x04,
+                       RoleWaitSend = 0x08,
+                       RolePostSend = 0x10,
+                       RolePostRecv = 0x20,
+                       Aborted = 0x40,
+                       PtrsFifoEnabled = 0x80,
+                       SizesFifoEnabled = 0x100,
+                       DirectEnabled = 0x200,
+                       ThreadsSynced = 0x400;
+  const int tid;
+  int nthreads;
+  int nworkers;
+  const int stepSize;
+  Fan fan;
   struct ncclConnInfo* conn = NULL;
   volatile int* connSizesFifoPtr = NULL;
   void** connPtrsFifoPtr = NULL;
@@ -222,7 +224,7 @@ class ncclPrimitives {
   }
 
  public:
-  __device__ __forceinline__ ncclPrimitives(
+  __device__ __forceinline__ Primitives(
       const int tid, const int nthreads, int* recvPeers, int* sendPeers, 
       T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm, int group = 0
       ): 
@@ -269,7 +271,7 @@ class ncclPrimitives {
     loadSendConn(channel);
   }
 
-    __device__ __forceinline__ ~ncclPrimitives() {
+    __device__ __forceinline__ ~Primitives() {
     // Save steps for the next operation
     if (flags & (RolePostSend|RolePostRecv)) {
       conn->step = step;
@@ -322,7 +324,6 @@ class ncclPrimitives {
     // Direct is only for the send part
     GenericOp<0, 1, 1, 1, 1, 1>(src, dst, nelem, directOffset);
   }
-
 };
 
 #endif

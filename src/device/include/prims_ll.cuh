@@ -6,12 +6,14 @@
 
 #ifndef __PRIMS_LL_H__
 #define __PRIMS_LL_H__
-template <typename T, class FUNC, int NRECV, int NSEND>
-class ncclLLPrimitives {
+template<typename T, typename RedOp, typename Fan, int Direct>
+class Primitives<T, RedOp, Fan, Direct, ProtoLL>:
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL>> {
+
  private:
-  static constexpr int MaxRecv = NRECV, MaxSend = NSEND;
+  static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
-  FUNC func;
+  RedOp redOp;
   const int tid;
   const int nthreads;
   const int wid;
@@ -141,9 +143,9 @@ class ncclLLPrimitives {
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
 
       if (RECV) {
-        if (SRC) val = MULTI<FUNC, T>()(func, readLL(0, offset), val);
-        for (int i=1; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(func, readLL(i, offset), val);
+        if (SRC) val = MULTI<RedOp, T>()(redOp, readLL(0, offset), val);
+        for (int i=1; i<MaxRecv && i<nrecv; i++) {
+          val = MULTI<RedOp, T>()(redOp, readLL(i, offset), val);
         }
       }
 
@@ -205,7 +207,7 @@ class ncclLLPrimitives {
   }
 
  public:
-  __device__ __forceinline__ ncclLLPrimitives(
+  __device__ __forceinline__ Primitives(
       const int tid, const int nthreads, int* recvPeers, int* sendPeers, 
       T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm, int group = 0
       ): 
@@ -214,7 +216,7 @@ class ncclLLPrimitives {
       nthreads(nthreads), 
       wid(tid%WARP_SIZE), 
       stepLines(comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS)), 
-      func(FuncTraits<FUNC>().make(comm->nRanks)) {
+      redOp(FuncTraits<RedOp>().make(comm->nRanks)) {
     // Make sure step is updated before we read it.
     barrier();
 
@@ -231,7 +233,7 @@ class ncclLLPrimitives {
     loadSendSync();
   }
 
-  __device__ __forceinline__ ~ncclLLPrimitives() {
+  __device__ __forceinline__ ~Primitives() {
     // Save steps for the next operation
     if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
       recvConn->step = recvConnHead;

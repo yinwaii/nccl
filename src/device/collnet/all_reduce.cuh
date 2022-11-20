@@ -30,7 +30,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC>
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoSimple<1, 1, UNROLL>>
         prims(tid, args->nThreads, tree->down, &tree->up, NULL, channel, comm, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
@@ -47,7 +47,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     }
 
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC>
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoSimple<1, 1, UNROLL>>
         prims(tid, nthreads, &tree->up, tree->down, NULL, channel, comm, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
@@ -91,7 +91,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, tree->down, &tree->up, NULL, channel, comm);
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoLL> LLprims(tid, nthreads, tree->down, &tree->up, NULL, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -107,7 +107,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
     }
 
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, NULL, channel, comm);
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 0, ProtoLL> LLprims(tid, nthreads, &tree->up, tree->down, NULL, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
         ssize_t offset = gridOffset + bid*chunkSize;

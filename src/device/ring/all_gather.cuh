@@ -25,7 +25,7 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
       const T * __restrict__ thisInput = (const T*)args->sendbuff;
       T * __restrict__ thisOutput = (T*)args->recvbuff;
 
-      ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS, T, 1, 1, 1, FUNC>
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 1, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS, UNROLL>>
         prims(tid, args->nThreads, &ring->prev, &ring->next, thisOutput, channel, comm, 0);
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -83,7 +83,7 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UN
       const ssize_t loopSize = nChannels*chunkSize;
       const ssize_t size = args->coll.count;
 
-      ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 1, ProtoLL> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
 
       // Compute pointers
       const T * __restrict__ thisInput = (const T*)args->sendbuff;
@@ -146,7 +146,7 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
       const ssize_t loopSize = nChannels*chunkSize;
       const ssize_t size = args->coll.count;
 
-      ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
+      Primitives<T, FUNC, FanAsymmetric<1, 1>, 1, ProtoLL128> LLprims(tid, nthreads, &ring->prev, &ring->next, NULL, channel, comm);
 
       // Compute pointers
       const T * __restrict__ thisInput = (const T*)args->sendbuff;
