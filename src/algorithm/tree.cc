@@ -254,10 +254,10 @@ ncclResult_t ncclEnqueueTree::tuningAlgoTime(struct ncclInfo *info, int algorith
 
 ncclResult_t ncclEnqueueTree::getPattern(int coll, int *pattern) const {
   switch (coll) {
-    case ncclFuncBroadcast:
-      *pattern = ncclPatternTreeDown; break;
-    case ncclFuncReduce:
-      *pattern = ncclPatternTreeUp; break;
+    // case ncclFuncBroadcast:
+    //   *pattern = ncclPatternTreeDown; break;
+    // case ncclFuncReduce:
+    //   *pattern = ncclPatternTreeUp; break;
     case ncclFuncAllReduce:
       *pattern = ncclPatternTreeUpDown; break;
     default:

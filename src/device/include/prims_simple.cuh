@@ -233,7 +233,8 @@ private:
     nworkers(nworkers), 
     stepSize(comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)), 
     srcs((const T**)ncclShmem->ptrs[group].srcs), 
-    dsts((T**)ncclShmem->ptrs[group].dsts) {
+    dsts((T**)ncclShmem->ptrs[group].dsts),
+    group(group) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy
     this->nthreads = nthreads;
