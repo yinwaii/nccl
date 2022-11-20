@@ -66,8 +66,8 @@ ncclResult_t ncclTopoCollNet::ncclTopoConnectCollNet(int rank) {
   return ncclSuccess;
 }
 
-int64_t ncclParamCollNetEnable();
-// NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
+// int64_t ncclParamCollNetEnable();
+NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
 
 ncclResult_t ncclTopoCollNet::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   if (comm->nNodes > 1 &&
