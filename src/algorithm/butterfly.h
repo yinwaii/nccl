@@ -1,5 +1,5 @@
-#ifndef __TREE_H__
-#define __TREE_H__
+#ifndef __BUTTERFLY_H__
+#define __BUTTERFLY_H__
 #include "comm.h"
 #include "info.h"
 #include "base.h"

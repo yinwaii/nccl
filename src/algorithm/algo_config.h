@@ -37,6 +37,20 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
+struct ncclButterfly {
+  int peerNum;
+  struct {
+    bool type;
+    union {
+      int peer;
+      struct {
+        int head;
+        int tail;
+      };
+    };
+  } *butterflyPeers;
+};
+
 struct ncclChannel {
   union {
     struct {

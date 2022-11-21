@@ -3,6 +3,7 @@
 #include "collnet.h"
 #include "ring.h"
 #include "tree.h"
+#include "butterfly.h"
 #include "algo_config.h"
 #include "comm.h"
 #include "topo.h"
