@@ -233,6 +233,7 @@ ncclResult_t ncclEnqueueRing::enqueueSlice(struct ncclInfo *info, struct ncclSli
     case NCCL_PROTO_SIMPLE: {
       sliceInfo->chunkSteps = info->chunkSteps;
       sliceInfo->sliceSteps = info->sliceSteps;
+      sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
       break;
     }
     default: {
