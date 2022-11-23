@@ -16,7 +16,7 @@ ncclResult_t ncclTopoInit(const AlgoInfo<ncclTopoAlgo> &algos, int tmpNnodes) {
 	NCCLCHECK(algos[NCCL_ALGO_RING]->graphInit(NCCL_TOPO_PATTERN_RING, 1, MAXCHANNELS / 2));
 	NCCLCHECK(algos[NCCL_ALGO_TREE]->graphInit(tmpNnodes <= 2 ? NCCL_TOPO_PATTERN_TREE : NCCL_TOPO_PATTERN_BALANCED_TREE, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
 	NCCLCHECK(algos[NCCL_ALGO_COLLNET]->graphInit(NCCL_TOPO_PATTERN_TREE, algos[NCCL_ALGO_RING]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels));
-	NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY]->graphInit(NCCL_TOPO_PATTERN_TREE, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
+	NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY]->graphInit(NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
 	return ncclSuccess;
 }
 

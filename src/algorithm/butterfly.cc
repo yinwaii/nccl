@@ -9,19 +9,18 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
   int nChannels = comm->nChannels;
 
   NCCLCHECK(ncclCalloc(&lastRanks, nranks * MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&peerRanks, log2i(nranks) * MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&peerRanks, (log2i(nranks - 1) + 1) * MAXCHANNELS));
 
   for (int c=0; c<nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
     for (int r = 0; r < nranks; r++){
-      lastRanks[c*nranks+r] = -1;
+      lastRanks[(c+nChannels)*nranks+r] = lastRanks[c*nranks+r] = -1;
     }
     for (int mask = 0; (1 << mask) < nranks; mask++) {
       int peer = rank ^ (1 << mask);
-      peerRanks[c*nranks+mask] = (peer < nranks) ? peer : -1;
+      peerRanks[(c+nChannels)*nranks+mask] = peerRanks[c*nranks+mask] = (peer < nranks) ? peer : -1;
     }
     topoRanks->butterflyLastRank[c] = (rank & (nranks - 1)) != rank;
-    lastRanks[c*nranks+0] = topoRanks->butterflyLastRank[c] ? 0 : -1;
+    lastRanks[(c+nChannels)*nranks+0] = lastRanks[c*nranks+0] = topoRanks->butterflyLastRank[c] ? 0 : -1;
   }
 
   return ncclSuccess;
@@ -49,18 +48,25 @@ ncclResult_t ncclTopoButterfly::topoPostset(int *firstRanks, struct ncclTopoRank
 
 ncclResult_t ncclTopoButterfly::transportSetup() {
   int nranks = comm->nRanks;
-  for (int c=0; c<comm->nChannels; c++) {
+  char line[1024] = "";
+  sprintf(line + strlen(line), "Butterfly for %d\n", comm->rank);
+  for (int c = 0; c < comm->nChannels; c++) {
+    sprintf(line + strlen(line), "Channel %d:\n", c);
     struct ncclChannel* channel = comm->channels+c;
     if (nranks == 1) continue;
-    for (int i = 0; i < log2i(nranks); i++) {
+    sprintf(line + strlen(line), "Peer Ranks: ");
+    for (int i = 0; i < log2i(nranks - 1) + 1; i++) {
       channel->butterfly.peerRanks[i] = peerRanks[c*nranks+i];
       int peer = channel->butterfly.peerRanks[i];
+      sprintf(line + strlen(line), "%d/", peer);
       if (peer != -1)
-          NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &peer, 1, &peer));
+        NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &peer, 1, &peer));
     }
+    sprintf(line + strlen(line), "\nLast Ranks: ");
     for (int r = 0; r < nranks; r++) {
       channel->butterfly.lastRanks[r] = lastRanks[c*nranks+r];
       int peer = channel->butterfly.lastRanks[r];
+      sprintf(line + strlen(line), "%d/", peer);
       if (peer != -1) {
         if (comm->rank == 0) {
           NCCLCHECK(ncclTransportP2pConnect(comm, channel, 0, NULL, 1, &peer));
@@ -69,7 +75,9 @@ ncclResult_t ncclTopoButterfly::transportSetup() {
           NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &peer, 0, NULL));
       }
     }
+    sprintf(line + strlen(line), "\n");
   }
+  WARN("%s", line);
   NCCLCHECK(ncclTransportP2pSetup(comm, &graph));
   return ncclSuccess;
 }
@@ -93,21 +101,23 @@ ncclResult_t ncclEnqueueButterfly::proxySaveColl(struct ncclProxyArgs *args, str
   struct ncclButterfly *butterfly = &args->channel->butterfly;
   int nRanks = info->comm->nRanks, rank = info->comm->rank;
   if (pattern == ncclPatternButterfly) {
-    for (int i = 0; i < log2i(nRanks); i++) {
+    for (int i = 0; i < log2i(nRanks - 1) + 1; i++) {
       int peer = butterfly->peerRanks[i];
       if (peer != -1) {
         NCCLCHECK(SaveProxy(proxySend, peer, args));
         NCCLCHECK(SaveProxy(proxyRecv, peer, args));
       }
     }
-    for (int r = 0; r < nRanks; r++) {
-      int peer = butterfly->lastRanks[r];
-      if (peer != -1) {
-        if (rank == 0) {
-          NCCLCHECK(SaveProxy(proxySend, r, args));
+    if ((nRanks & (-nRanks)) != nRanks) {
+      for (int r = 0; r < nRanks; r++) {
+        int peer = butterfly->lastRanks[r];
+        if (peer != -1) {
+          if (rank == 0) {
+            NCCLCHECK(SaveProxy(proxySend, peer, args));
+          }
+          else
+            NCCLCHECK(SaveProxy(proxyRecv, peer, args));
         }
-        else
-          NCCLCHECK(SaveProxy(proxyRecv, r, args));
       }
     }
   }

@@ -284,10 +284,12 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int collNetTypeSupport = 0;
   if (info->comm->collNetSupport)
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
-  if (collNetTypeSupport != 1) nAlgos--;
+  // if (collNetTypeSupport != 1) nAlgos--;
   for (int a=0; a<nAlgos; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float time;
+      if (collNetTypeSupport != 1 && a == NCCL_ALGO_COLLNET)
+        continue;
       NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time));
       if (time >= 0 && time < minTime) {
         info->algorithm = a;

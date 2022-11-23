@@ -268,6 +268,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     int buffSize = stepSize*args->sliceSteps;
     if (resources->shared) buffSize /= SENDRECV_SLICEFACTOR;
     if (args->sendbytes < buffSize) buffSize = args->sendbytes;
+    // TRACE(NCCL_NET, "rank %d: sendProxy request doing, end: %d, done: %d, trasmitted: %d, posted: %d", args->connector->comm->rank, args->end, args->done, args->transmitted, args->posted);
     // Post buffers to the GPU
     if (args->posted < args->end && args->posted < args->done + NCCL_STEPS) {
       if (resources->shared) {
@@ -320,7 +321,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           // Data is ready, try to send.
           NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, mhandle, args->requests+buffSlot));
           if (args->requests[buffSlot] != NULL) {
-            TRACE(NCCL_NET, "sendProxy [%d/%d] Isend (LL) posted, req %p", args->transmitted, buffSlot, args->requests[buffSlot]);
+            TRACE(NCCL_NET, "sendProxy [%d/%d] Isend (LL) posted, req %p, total: %d", args->transmitted, buffSlot, args->requests[buffSlot], args->done);
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
@@ -337,7 +338,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       int buffSlot = args->done%NCCL_STEPS;
       NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
       if (done) {
-        TRACE(NCCL_NET, "sendProxy [%d/%d] request %p done, size %d", args->done, buffSlot, args->requests[buffSlot]);
+        TRACE(NCCL_NET, "sendProxy [%d/%d] request %p done, size: %d", args->done, buffSlot, args->requests[buffSlot], args->nsteps);
         if (resources->shared) {
           char* ptr = (char*)resources->recvMem->ptrsFifo[args->done%NCCL_STEPS];
           NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, 0, args->channel->id, buffSize, ptr));
@@ -377,6 +378,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     int buffSize = stepSize*args->sliceSteps;
     if (resources->shared) buffSize /= SENDRECV_SLICEFACTOR;
     if (args->recvbytes < buffSize) buffSize = args->recvbytes;
+    // TRACE(NCCL_NET, "rank %d: recvProxy request doing, end: %d, done: %d, trasmitted: %d, received: %d, posted: %d", args->connector->comm->rank, args->end, args->done, args->transmitted, args->received, args->posted);
     if ((args->posted < args->done + NCCL_STEPS) && (args->posted < args->end)) {
       int buffSlot = args->posted%NCCL_STEPS;
       char* ptr;
@@ -390,7 +392,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       }
       NCCLCHECK(ncclNetIrecv(resources->netRecvComm, ptr, buffSize, mhandle, args->requests+buffSlot));
       if (args->requests[buffSlot] != NULL) {
-        TRACE(NCCL_NET, "recvProxy [%d/%d] posted recv request %p", args->posted, buffSlot, args->requests[buffSlot]);
+        TRACE(NCCL_NET, "recvProxy [%d/%d] posted recv request %p, total %d", args->posted, buffSlot, args->requests[buffSlot], args->done);
         args->posted += args->sliceSteps;
         args->idle = 0;
         return ncclSuccess;
