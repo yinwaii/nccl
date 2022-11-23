@@ -2,206 +2,127 @@
 
 // Topo
 
-ncclTopoButterfly::ncclTopoButterfly(struct ncclComm *comm): ncclTopoBase(NCCL_ALGO_TREE, comm, ncclParamCrossNic(), 0) {}
+ncclTopoButterfly::ncclTopoButterfly(struct ncclComm *comm): ncclTopoBase(NCCL_ALGO_BUTTERFLY, comm, ncclParamCrossNic(), 0) {}
 
 ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
-  int rank = comm->rank;
-  int localRanks = comm->localRanks;
+  int rank = comm->rank, nranks = comm->nRanks;
   int nChannels = comm->nChannels;
+
+  NCCLCHECK(ncclCalloc(&lastRanks, nranks * MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&peerRanks, log2i(nranks) * MAXCHANNELS));
 
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    channel->tree.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->tree.down[i] = -1;
-
-    int* treeIntra = graph.intra+c*localRanks;
-
-    for (int i=0; i<localRanks; i++) {
-      if (treeIntra[i] == rank) {
-        int parentIndex = 0;
-        int child0Index = graph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
-        int child1Index = graph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ? 1 : 0;
-
-        topoRanks->treeToParent[c] = treeIntra[parentIndex];
-        topoRanks->treeToChild0[c] = treeIntra[child0Index];
-        topoRanks->treeToChild1[c] = treeIntra[child1Index];
-        channel->tree.up         = i == 0 ? -1 : treeIntra[i-1];
-        channel->tree.down[0]    = i == localRanks-1 ? -1 : treeIntra[i+1];
-      }
+    for (int r = 0; r < nranks; r++){
+      lastRanks[c*nranks+r] = -1;
     }
-  }
-  
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoButterfly::ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* parentChildType) {
-  int up, down0, down1;
-  int bit = (rank & (-rank));
-
-  if (rank == 0) {
-    *u = -1;
-    *d0 = -1;
-    // Child rank is > 0 so it has to be our child 1, not 0.
-    *d1 = nranks > 1 ? bit >> 1 : -1;
-    return ncclSuccess;
+    for (int mask = 0; (1 << mask) < nranks; mask++) {
+      int peer = rank ^ (1 << mask);
+      peerRanks[c*nranks+mask] = (peer < nranks) ? peer : -1;
+    }
+    topoRanks->butterflyLastRank[c] = (rank & (nranks - 1)) != rank;
+    lastRanks[c*nranks+0] = topoRanks->butterflyLastRank[c] ? 0 : -1;
   }
 
-  up = (rank ^ bit) | (bit << 1);
-  // if smaller than the parent, we are his first child, otherwise we're his second
-  if (up >= nranks) up = (rank ^ bit);
-  *parentChildType = (rank < up) ? 0 : 1;
-  *u = up;
-
-  int lowbit = bit >> 1;
-  // down0 is always within bounds
-  down0 = lowbit == 0 ? -1 : rank-lowbit;
-
-  down1 = lowbit == 0 ? -1 : rank+lowbit;
-  // Make sure down1 is within bounds
-  while (down1 >= nranks) {
-    down1 = lowbit == 0 ? -1 : rank+lowbit;
-    lowbit >>= 1;
-  }
-  *d0 = down0; *d1 = down1;
-
-  return ncclSuccess;
-}
-
-/* Build a double binary tree. Take the previous tree for the first tree.
- * For the second tree, we use a mirror tree (if nranks is even)
- *
- * 0---------------8                   3----------------11
- *          ______/ \                 / \______
- *         4         \               /         7
- *       /   \        \             /        /   \
- *     2       6       10         1        5      9
- *    / \     / \     /  \       / \      / \    / \
- *   1   3   5   7   9   11     0   2    4   6  8   10
- *
- * or shift it by one rank (if nranks is odd).
- *
- * 0---------------8            1---------------9
- *          ______/ \______              ______/ \______
- *         4               12           5                0
- *       /   \            /           /   \            /
- *     2       6       10           3       7       11
- *    / \     / \     /  \         / \     / \     /  \
- *   1   3   5   7   9   11       2   4   6   8  10   12
- */
-ncclResult_t ncclTopoButterfly::ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* parentChildType0, int* s1, int* d1_0, int* d1_1, int* parentChildType1) {
-  // First tree ... use a btree
-  ncclGetBtree(nranks, rank, s0, d0_0, d0_1, parentChildType0);
-  // Second tree ... mirror or shift
-  if (nranks % 2 == 1) {
-    // shift
-    int shiftrank = (rank-1+nranks) % nranks;
-    int u, d0, d1;
-    ncclGetBtree(nranks, shiftrank, &u, &d0, &d1, parentChildType1);
-    *s1 = u == -1 ? -1 : (u+1) % nranks;
-    *d1_0 = d0 == -1 ? -1 : (d0+1) % nranks;
-    *d1_1 = d1 == -1 ? -1 : (d1+1) % nranks;
-  } else {
-    // mirror
-    int u, d0, d1;
-    ncclGetBtree(nranks, nranks-1-rank, &u, &d0, &d1, parentChildType1);
-    *s1 = u == -1 ? -1 : nranks-1-u;
-    *d1_0 = d0 == -1 ? -1 : nranks-1-d0;
-    *d1_1 = d1 == -1 ? -1 : nranks-1-d1;
-  }
-  return ncclSuccess;
-}
-
-
-ncclResult_t ncclTopoButterfly::getIndexes(int *ranks, int *indexes, int nNodes, int *firstRanks) {
-  for (int n = 0; n < nNodes; n++) indexes[n] = ranks[firstRanks[n]];
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoButterfly::setTreeUp(struct ncclTree* tree, int* indexes, int u) {
-  if (u == -1) return ncclSuccess;
-  tree->up = indexes[u];
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoButterfly::setTreeDown(struct ncclTree* tree, int* indexes, int d) {
-  if (d == -1) return ncclSuccess;
-  int x = 0;
-  while (x < NCCL_MAX_TREE_ARITY && tree->down[x] >= 0) x++;
-  if (x == NCCL_MAX_TREE_ARITY) {
-    WARN("Internal error : tree already has %d children (%d %d %d)\n", x, tree->down[0], tree->down[1], tree->down[2]);
-    return ncclInternalError;
-  }
-  tree->down[x] = indexes[d];
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoButterfly::connectTrees(int* treeToParent, int* treeToChild0, int* treeToChild1, int* firstRanks, int* treePatterns) {
-  const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
-  int* ranksToParent, *ranksToChild0, *ranksToChild1;
-  NCCLCHECK(ncclCalloc(&ranksToParent, nNodes));
-  NCCLCHECK(ncclCalloc(&ranksToChild0, nNodes));
-  NCCLCHECK(ncclCalloc(&ranksToChild1, nNodes));
-
-  // Compute tree depth. Not an exact value but a good approximation in most
-  // cases
-  int depth = comm->nRanks/nNodes - 1 + log2i(nNodes);
-
-  int t0u, t0d0, t0d1, t0ChildType, t1u, t1d0, t1d1, t1ChildType;
-  NCCLCHECK(ncclGetDtree(nNodes, node, &t0u, &t0d0, &t0d1, &t0ChildType, &t1u, &t1d0, &t1d1, &t1ChildType));
-  for (int c=0; c<nChannels; c++) {
-     struct ncclChannel* channel0 = comm->channels+c;
-     struct ncclChannel* channel1 = channel0+nChannels;
-     NCCLCHECK(getIndexes(treeToParent+c*comm->nRanks, ranksToParent, nNodes, firstRanks));
-     NCCLCHECK(getIndexes(treeToChild0+c*comm->nRanks, ranksToChild0, nNodes, firstRanks));
-     NCCLCHECK(getIndexes(treeToChild1+c*comm->nRanks, ranksToChild1, nNodes, firstRanks));
-     if (comm->rank == ranksToParent[node]) {
-       NCCLCHECK(setTreeUp(&channel0->tree, t0ChildType == 0 ? ranksToChild0 : ranksToChild1, t0u));
-       NCCLCHECK(setTreeUp(&channel1->tree, t1ChildType == 0 ? ranksToChild0 : ranksToChild1, t1u));
-     }
-     if (comm->rank == ranksToChild0[node]) {
-       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d0));
-       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d0));
-     }
-     if (comm->rank == ranksToChild1[node]) {
-       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d1));
-       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d1));
-     }
-     if (comm->rank == ranksToParent[node] ||
-         comm->rank == ranksToChild0[node] ||
-         comm->rank == ranksToChild1[node]) {
-       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c,           channel0->tree.up, comm->rank, channel0->tree.down[0], channel0->tree.down[1], channel0->tree.down[2]);
-       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->tree.up, comm->rank, channel1->tree.down[0], channel1->tree.down[1], channel1->tree.down[2]);
-     }
-     channel0->tree.depth = channel1->tree.depth = depth;
-  }
-  free(ranksToParent);
-  free(ranksToChild0);
-  free(ranksToChild1);
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoButterfly::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   // Gather data from all ranks
-  int *treeToParent, *treeToChild0, *treeToChild1;
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
-  NCCLCHECK(ncclCalloc(&treeToParent, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeToChild0, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeToChild1, nranks*MAXCHANNELS));
+  int lastNum = 0;
   for (int i = 0; i < nranks; i++) {
 	  for (int c = 0; c < nChannels; c++) {
-      treeToParent[c*nranks+i] = allTopoRanks[i]->treeToParent[c];
-      treeToChild0[c*nranks+i] = allTopoRanks[i]->treeToChild0[c];
-      treeToChild1[c*nranks+i] = allTopoRanks[i]->treeToChild1[c];
-	  }
+      // struct ncclChannel *channel0 = comm->channels + c;
+      // struct ncclChannel *channel1 = channel0 + nChannels;
+      if (comm->rank == 0 && allTopoRanks[i]->butterflyLastRank[c]) {
+        lastRanks[c*nranks+lastNum] = i;
+        lastRanks[(c+nChannels)*nranks+lastNum] = i;
+        lastNum++;
+      }
+    }
   }
 
-  // Connect rings and trees. This should also duplicate the channels.
-  NCCLCHECK(connectTrees(treeToParent, treeToChild0, treeToChild1, firstRanks, treePatterns));
+  return ncclSuccess;
+}
 
-  free(treeToParent);
-  free(treeToChild0);
-  free(treeToChild1);
+ncclResult_t ncclTopoButterfly::transportSetup() {
+  int nranks = comm->nRanks;
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    if (nranks == 1) continue;
+    for (int i = 0; i < log2i(nranks); i++) {
+      channel->butterfly.peerRanks[i] = peerRanks[c*nranks+i];
+      int peer = channel->butterfly.peerRanks[i];
+      if (peer != -1)
+          NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &peer, 1, &peer));
+    }
+    for (int r = 0; r < nranks; r++) {
+      channel->butterfly.lastRanks[r] = lastRanks[c*nranks+r];
+      int peer = channel->butterfly.lastRanks[r];
+      if (peer != -1) {
+        if (comm->rank == 0) {
+          NCCLCHECK(ncclTransportP2pConnect(comm, channel, 0, NULL, 1, &peer));
+        }
+        else
+          NCCLCHECK(ncclTransportP2pConnect(comm, channel, 1, &peer, 0, NULL));
+      }
+    }
+  }
+  NCCLCHECK(ncclTransportP2pSetup(comm, &graph));
+  return ncclSuccess;
+}
 
+ncclResult_t ncclEnqueueButterfly::getPattern(int coll, int *pattern) const {
+  switch (coll) {
+    // case ncclFuncBroadcast:
+    //   *pattern = ncclPatternHalfDoubling;
+    //   break;
+    case ncclFuncAllReduce:
+      *pattern = ncclPatternButterfly;
+      break;
+    default:
+      *pattern = -1;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueButterfly::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
+  int pattern = info->pattern;
+  struct ncclButterfly *butterfly = &args->channel->butterfly;
+  int nRanks = info->comm->nRanks, rank = info->comm->rank;
+  if (pattern == ncclPatternButterfly) {
+    for (int i = 0; i < log2i(nRanks); i++) {
+      int peer = butterfly->peerRanks[i];
+      if (peer != -1) {
+        NCCLCHECK(SaveProxy(proxySend, peer, args));
+        NCCLCHECK(SaveProxy(proxyRecv, peer, args));
+      }
+    }
+    for (int r = 0; r < nRanks; r++) {
+      int peer = butterfly->lastRanks[r];
+      if (peer != -1) {
+        if (rank == 0) {
+          NCCLCHECK(SaveProxy(proxySend, r, args));
+        }
+        else
+          NCCLCHECK(SaveProxy(proxyRecv, r, args));
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueButterfly::enqueueLoopInfo(struct ncclInfo *info) const {
+  switch (info->pattern) {
+  case ncclPatternButterfly:
+    info->nchunksPerLoop = 1;
+    info->nstepsPerLoop = 1;
+    break;
+  default:
+    WARN("Unknown pattern %d\n", info->pattern);
+    return ncclInternalError;
+  }
   return ncclSuccess;
 }

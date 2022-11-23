@@ -270,6 +270,8 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   // Copy userRanks and peers
   for (int r=0; r<comm->p2pnChannels; r++) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring.devUserRanks, comm->channels[r].ring.userRanks, comm->nRanks));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].butterfly.devPeerRanks, comm->channels[r].butterfly.peerRanks, log2i(comm->nRanks)));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].butterfly.devLastRanks, comm->channels[r].butterfly.lastRanks, comm->nRanks));
   }
 
   // Duplicate the dev comm on the device
@@ -307,24 +309,6 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->busId = comm->busId;
 
   NCCLCHECK(ncclGpuGdrSupport(&info->gdrSupport));
-  return ncclSuccess;
-}
-
-static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
-  TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
-  NCCLCHECK(initChannel(comm, channelId));
-
-  struct ncclRing* ring = &comm->channels[channelId].ring;
-  // Reorganize ranks to start with rank.
-  int shift;
-  for (shift = 0; shift<nranks; shift++) {
-    if (ringRanks[shift] == rank) {
-      break;
-    }
-  }
-  for (int i=0; i<nranks; i++) {
-    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
-  }
   return ncclSuccess;
 }
 
@@ -532,7 +516,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].nChannels = comm->nChannels = algos[NCCL_ALGO_TREE]->graph.nChannels = algos[NCCL_ALGO_RING]->graph.nChannels =
-      std::min(algos[NCCL_ALGO_TREE]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels);
+      algos[NCCL_ALGO_BUTTERFLY]->graph.nChannels = std::min(algos[NCCL_ALGO_TREE]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels);
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
     algos[a]->graph.nChannels = comm->nChannels;
     NCCLCHECK(algos[a]->graphCopy(allGather3Data[rank].graphInfos + a));

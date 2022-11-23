@@ -283,6 +283,10 @@ ncclResult_t ncclEnqueueTree::enqueueLoopInfo(struct ncclInfo *info) const {
 }
 
 ncclResult_t ncclEnqueueTree::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const {
+  sliceInfo->chunkSteps = 1;
+  sliceInfo->sliceSteps = 1;
+  sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
+  this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, work);
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       if (info->pattern == ncclPatternTreeUpDown) {
@@ -303,10 +307,6 @@ ncclResult_t ncclEnqueueTree::enqueueSlice(struct ncclInfo *info, struct ncclSli
       while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < nstepsLL128*16/ppn && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
       // Use lastChunkSize as chunkSize
       work->coll.lastChunkSize = sliceInfo->chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
-      break;
-    }
-    default: {
-      this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, work);
       break;
     }
   }
