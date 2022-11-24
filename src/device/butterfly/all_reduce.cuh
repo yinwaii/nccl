@@ -4,13 +4,12 @@
 #include "devcomm.h"
 #include "primitives.cuh"
 
-__host__ __device__ static long log2i(long n) {
- long l = 0;
- while (n>>=1) l++;
- return l;
-}
-
 namespace {
+  __host__ __device__ static long log2i(long n) {
+	long l = 0;
+	while (n>>=1) l++;
+	return l;
+  }
   template<typename T, typename RedOp, typename Proto>
   __device__ void runButterfly(ncclWorkElem *args) {
     const int tid = threadIdx.x;
@@ -55,6 +54,9 @@ namespace {
 
         ssize_t chunkOffset = gridOffset + bid * realChunkSize;
         int nelem = min(realChunkSize, size - chunkOffset);
+        if (tid == 0) {
+          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
+        }
         if (send)
           prims.send(thisInput+chunkOffset, nelem);
         if (recv)

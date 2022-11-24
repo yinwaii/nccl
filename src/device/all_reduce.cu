@@ -13,5 +13,6 @@
 #include "tree/all_reduce.cuh"
 #include "collnet/all_reduce.cuh"
 #include "butterfly/all_reduce.cuh"
+#include "butterfly/all_reduce_2.cuh"
 
 IMPL_COLL_R(AllReduce);

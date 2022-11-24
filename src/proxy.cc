@@ -143,7 +143,7 @@ static ncclResult_t ProxyAppend(struct ncclProxyState* state, struct ncclProxyAr
   return ncclSuccess;
 }
 
-ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
+ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args, int nsteps) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
@@ -162,6 +162,8 @@ ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
   op->connector = connector;
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
+  if (nsteps >= 0)
+    op->nsteps = nsteps;
 
   op->proxyAppendPtr =
     connector->conn.shared ?

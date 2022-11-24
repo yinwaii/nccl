@@ -6,13 +6,15 @@
 	f(TREE, ##__VA_ARGS__) \
 	f(RING, ##__VA_ARGS__) \
 	f(COLLNET, ##__VA_ARGS__) \
-  f(BUTTERFLY, ##__VA_ARGS__)
+  f(BUTTERFLY, ##__VA_ARGS__) \
+  f(BUTTERFLY2, ##__VA_ARGS__)
 
-#define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 5 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
 #define NCCL_ALGO_BUTTERFLY 3
+#define NCCL_ALGO_BUTTERFLY2 4
 
 #define NCCL_TOPO_PATTERN_BALANCED_TREE 1 // Spread NIC traffic between two GPUs (Tree parent + one child on first GPU, second child on second GPU)
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2	  // Spread NIC traffic between two GPUs (Tree parent on first GPU, tree children on the second GPU)
@@ -41,12 +43,9 @@ struct ncclTree {
 
 #define NCCL_MAX_BUTTERFLY_STEP 10
 struct ncclButterfly {
-  // int peerRanks[NCCL_MAX_BUTTERFLY_STEP];
   int edgeRank;
   int *peerRanks;
-  // int *lastRanks;
   int *devPeerRanks;
-  // int *devLastRanks;
 };
 
 struct ncclChannel {
@@ -82,7 +81,6 @@ struct ncclTopoRanks {
   int treeToParent[MAXCHANNELS];
   int treeToChild0[MAXCHANNELS];
   int treeToChild1[MAXCHANNELS];
-  // bool butterflyLastRank[MAXCHANNELS];
 };
 
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];

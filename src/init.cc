@@ -514,8 +514,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
-  allGather3Data[rank].nChannels = comm->nChannels = algos[NCCL_ALGO_TREE]->graph.nChannels = algos[NCCL_ALGO_RING]->graph.nChannels =
-      algos[NCCL_ALGO_BUTTERFLY]->graph.nChannels = std::min(algos[NCCL_ALGO_TREE]->graph.nChannels, algos[NCCL_ALGO_RING]->graph.nChannels);
+  allGather3Data[rank].nChannels = comm->nChannels = MAXCHANNELS;
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
+    if (a != NCCL_ALGO_COLLNET)
+      allGather3Data[rank].nChannels = comm->nChannels = std::min(comm->nChannels, algos[a]->graph.nChannels);
+  }
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
     algos[a]->graph.nChannels = comm->nChannels;
     NCCLCHECK(algos[a]->graphCopy(allGather3Data[rank].graphInfos + a));

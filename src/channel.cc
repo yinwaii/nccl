@@ -40,10 +40,8 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   // Free Ring index to rank tables
   free(channel->ring.userRanks);
   CUDACHECK(cudaFree(channel->ring.devUserRanks));
-  // free(channel->butterfly.peerRanks);
-  // CUDACHECK(cudaFree(channel->butterfly.devPeerRanks));
-  // free(channel->butterfly.lastRanks);
-  // CUDACHECK(cudaFree(channel->butterfly.devLastRanks));
+  free(channel->butterfly.peerRanks);
+  CUDACHECK(cudaFree(channel->butterfly.devPeerRanks));
 
   // Free transport proxy resources
   // Note: free all send resources first due to CollNet arrangement

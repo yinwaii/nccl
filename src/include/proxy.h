@@ -83,7 +83,7 @@ enum proxyMode {
 #define SEND 1
 
 enum { proxyRecv=0, proxySend=1 };
-ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs *args);
+ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs *args, int nsteps = -1);
 
 ncclResult_t ncclProxySaveP2p(struct ncclInfo *info, struct ncclChannel *channel, int segment);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
