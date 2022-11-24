@@ -55,9 +55,9 @@ namespace {
 
         ssize_t chunkOffset = gridOffset + bid * realChunkSize;
         int nelem = min(realChunkSize, size - chunkOffset);
-        if (tid == 0) {
-          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
-        }
+        // if (tid == 0) {
+        //   printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
+        // }
         if ((rank < peer) & scatter)
           prims.send(thisInput+chunkOffset, nelem);
         else if (scatter)

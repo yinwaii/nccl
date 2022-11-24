@@ -14,5 +14,6 @@
 #include "collnet/all_reduce.cuh"
 #include "butterfly/all_reduce.cuh"
 #include "butterfly/all_reduce_2.cuh"
+#include "butterfly/all_reduce_yz.cuh"
 
 IMPL_COLL_R(AllReduce);

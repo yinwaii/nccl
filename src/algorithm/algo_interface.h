@@ -5,6 +5,7 @@
 #include "tree.h"
 #include "butterfly.h"
 #include "butterfly2.h"
+#include "butterfly_yz.h"
 #include "algo_config.h"
 #include "comm.h"
 #include "topo.h"

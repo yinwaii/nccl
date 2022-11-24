@@ -661,6 +661,21 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   graph->nChannels = 0;
   graph->sameChannels = 1;
 
+  //topograph for butterfly - lyz  
+  if (graph->pattern == NCCL_TOPO_PATTERN_BUTTERFLY) {
+    int speedIndex = 0;
+    while (speedArray[speedIndex] > system->maxWidth && speedIndex < NSPEEDS-1) speedIndex++;
+    graph->speedIntra = graph->speedInter = speedArray[speedIndex];
+    graph->typeIntra = ngpus == 1 ? PATH_LOC : PATH_SYS;
+    graph->typeInter = PATH_SYS;
+    graph->inter[0] = graph->inter[1] = 0;
+    graph->intra[graph->nChannels*ngpus] = 0;
+    graph->intra[graph->nChannels*ngpus+1] = 1;
+    graph->nHops = 2;
+    graph->nChannels = 1;
+    return ncclSuccess;
+  }
+
   char* str = getenv("NCCL_GRAPH_FILE");
   if (str) {
     INFO(NCCL_ENV, "NCCL_GRAPH_FILE set by environment to %s", str);

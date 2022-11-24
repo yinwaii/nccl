@@ -10,5 +10,6 @@
 #include "collectives.h"
 
 #include "ring/broadcast.cuh"
+#include "butterfly/broadcast_yz.cuh"
 
 IMPL_COLL_C(Broadcast);

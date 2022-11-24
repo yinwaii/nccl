@@ -7,19 +7,22 @@
 	f(RING, ##__VA_ARGS__) \
 	f(COLLNET, ##__VA_ARGS__) \
   f(BUTTERFLY, ##__VA_ARGS__) \
-  f(BUTTERFLY2, ##__VA_ARGS__)
+  f(BUTTERFLY2, ##__VA_ARGS__) \
+  f(BUTTERFLY_YZ, ##__VA_ARGS__)
 
-#define NCCL_NUM_ALGORITHMS 5 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 6 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
 #define NCCL_ALGO_BUTTERFLY 3
 #define NCCL_ALGO_BUTTERFLY2 4
+#define NCCL_ALGO_BUTTERFLY_YZ 5
 
 #define NCCL_TOPO_PATTERN_BALANCED_TREE 1 // Spread NIC traffic between two GPUs (Tree parent + one child on first GPU, second child on second GPU)
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2	  // Spread NIC traffic between two GPUs (Tree parent on first GPU, tree children on the second GPU)
 #define NCCL_TOPO_PATTERN_TREE 3		  // All NIC traffic going to/from the same GPU
 #define NCCL_TOPO_PATTERN_RING 4		  // Ring
+#define NCCL_TOPO_PATTERN_BUTTERFLY 5 // Butterfly
 
 struct ncclRing {
   // Shortcuts for userRanks[1] and userRanks[n-1]
@@ -41,11 +44,18 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
-#define NCCL_MAX_BUTTERFLY_STEP 10
+#define NCCL_MAX_BUTTERFLY_STEPS 10
 struct ncclButterfly {
   int edgeRank;
   int *peerRanks;
   int *devPeerRanks;
+};
+
+struct ncclButterfly_YZ {
+  int myRank;
+  int peerCount;
+  int lastoneCompressed;
+  int peerRanks[NCCL_MAX_BUTTERFLY_STEPS];
 };
 
 struct ncclChannel {
@@ -55,6 +65,7 @@ struct ncclChannel {
       struct ncclTree tree;
       struct ncclTree collTree;
       struct ncclButterfly butterfly;
+      struct ncclButterfly_YZ butterfly_yz;
 
       int id;
 
@@ -81,6 +92,9 @@ struct ncclTopoRanks {
   int treeToParent[MAXCHANNELS];
   int treeToChild0[MAXCHANNELS];
   int treeToChild1[MAXCHANNELS];
+  // butterfly - lyz
+  int butterflyRecv[MAXCHANNELS];
+  int butterflySend[MAXCHANNELS];
 };
 
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];
