@@ -276,7 +276,7 @@ ncclResult_t ncclEnqueueCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
 ncclResult_t ncclEnqueueCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclWorkElem* work) const {
   sliceInfo->chunkSteps = 1;
   sliceInfo->sliceSteps = 1;
-  sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
+  sliceInfo->chunkSize = sliceInfo->stepSize * sliceInfo->chunkSteps;
   this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, work);
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
