@@ -39,11 +39,14 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
+#define NCCL_MAX_BUTTERFLY_STEP 10
 struct ncclButterfly {
+  // int peerRanks[NCCL_MAX_BUTTERFLY_STEP];
+  int edgeRank;
   int *peerRanks;
-  int *lastRanks;
+  // int *lastRanks;
   int *devPeerRanks;
-  int *devLastRanks;
+  // int *devLastRanks;
 };
 
 struct ncclChannel {
@@ -79,7 +82,7 @@ struct ncclTopoRanks {
   int treeToParent[MAXCHANNELS];
   int treeToChild0[MAXCHANNELS];
   int treeToChild1[MAXCHANNELS];
-  bool butterflyLastRank[MAXCHANNELS];
+  // bool butterflyLastRank[MAXCHANNELS];
 };
 
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];

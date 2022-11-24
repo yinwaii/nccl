@@ -8,7 +8,7 @@
 class ncclTopoButterfly: public ncclTopoBase {
 private:
 public:
-  int *peerRanks, *lastRanks;
+  int *peerRanks;
   ncclTopoButterfly(struct ncclComm *comm);
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
   ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);

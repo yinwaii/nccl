@@ -16,10 +16,10 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   NCCLCHECK(ncclCudaCalloc(&channel->ring.devUserRanks, comm->nRanks));
   NCCLCHECK(ncclCalloc(&channel->ring.userRanks, comm->nRanks));
 
-  NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devLastRanks, comm->nRanks));
-  NCCLCHECK(ncclCalloc(&channel->butterfly.lastRanks, comm->nRanks));
-  NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devPeerRanks, log2i(comm->nRanks-1)+1));
-  NCCLCHECK(ncclCalloc(&channel->butterfly.peerRanks, log2i(comm->nRanks-1)+1));
+  // NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devLastRanks, comm->nRanks));
+  // NCCLCHECK(ncclCalloc(&channel->butterfly.lastRanks, comm->nRanks));
+  NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devPeerRanks, log2i(comm->nRanks)));
+  NCCLCHECK(ncclCalloc(&channel->butterfly.peerRanks, log2i(comm->nRanks)));
 
   // Communication structures with peers.
   NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks+1)); // The extra one rank is for collnet root (i.e. network)
@@ -42,10 +42,10 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   // Free Ring index to rank tables
   free(channel->ring.userRanks);
   CUDACHECK(cudaFree(channel->ring.devUserRanks));
-  free(channel->butterfly.peerRanks);
-  CUDACHECK(cudaFree(channel->butterfly.devPeerRanks));
-  free(channel->butterfly.lastRanks);
-  CUDACHECK(cudaFree(channel->butterfly.devLastRanks));
+  // free(channel->butterfly.peerRanks);
+  // CUDACHECK(cudaFree(channel->butterfly.devPeerRanks));
+  // free(channel->butterfly.lastRanks);
+  // CUDACHECK(cudaFree(channel->butterfly.devLastRanks));
 
   // Free transport proxy resources
   // Note: free all send resources first due to CollNet arrangement
