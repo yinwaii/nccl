@@ -329,8 +329,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
 
   ncclSliceInfo sliceInfo;
   sliceInfo.stepSize = info->comm->buffSizes[info->protocol] / NCCL_STEPS;
-  sliceInfo.chunkSteps = info->chunkSteps;
-  sliceInfo.sliceSteps = info->sliceSteps;
+  sliceInfo.chunkSteps = info->protocol == NCCL_PROTO_SIMPLE ? info->chunkSteps : 1;
+  sliceInfo.sliceSteps = info->protocol == NCCL_PROTO_SIMPLE ? info->sliceSteps : 1;
   sliceInfo.chunkSize = sliceInfo.stepSize * sliceInfo.chunkSteps;
 
   // Compute lastChunkSize
