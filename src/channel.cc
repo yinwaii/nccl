@@ -16,8 +16,6 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   NCCLCHECK(ncclCudaCalloc(&channel->ring.devUserRanks, comm->nRanks));
   NCCLCHECK(ncclCalloc(&channel->ring.userRanks, comm->nRanks));
 
-  // NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devLastRanks, comm->nRanks));
-  // NCCLCHECK(ncclCalloc(&channel->butterfly.lastRanks, comm->nRanks));
   NCCLCHECK(ncclCudaCalloc(&channel->butterfly.devPeerRanks, log2i(comm->nRanks)));
   NCCLCHECK(ncclCalloc(&channel->butterfly.peerRanks, log2i(comm->nRanks)));
 

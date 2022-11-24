@@ -13,7 +13,6 @@ __host__ __device__ static long log2i(long n) {
 namespace {
   template<typename T, typename RedOp, typename Proto>
   __device__ void runButterfly(ncclWorkElem *args) {
-    // printf("HERE is ALGORITHM for BUTEERFLY!\n");
     const int tid = threadIdx.x;
     const int nthreads = args->nThreads;
     const int bid = args->coll.bid;
@@ -29,21 +28,21 @@ namespace {
     // Compute pointers
     const T *__restrict__ thisInput = (const T *)args->sendbuff;
     T *__restrict__ thisOutput = (T *)args->recvbuff;
-    if (tid == 0) {
-      for (int p = 0; p < log2i(comm->nRanks); p++) {
-        int peer = butterfly->devPeerRanks[p];
-        if (peer != -1) {
-          printf("%d: Peer is %d\n", p, peer);
-        }
-      }
-    }
+    // if (tid == 0) {
+    //   for (int p = 0; p < log2i(comm->nRanks); p++) {
+    //     int peer = butterfly->devPeerRanks[p];
+    //     if (peer != -1) {
+    //       printf("%d: Peer is %d\n", p, peer);
+    //     }
+    //   }
+    // }
 
     auto reduce = [&]__device__(int peer, bool send, bool recv, int step)->ssize_t {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
         prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, 0);
 
-      if (tid == 0)
-        printf("%d: START FOR peer %d\n", comm->rank, peer);
+      // if (tid == 0)
+      //   printf("%d: START FOR peer %d\n", comm->rank, peer);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t realChunkSize;
         if (Proto::Id == NCCL_PROTO_SIMPLE) {
@@ -61,8 +60,8 @@ namespace {
         if (recv)
           prims.recvReduceCopy(thisInput+chunkOffset, thisOutput+chunkOffset, nelem);
       }
-      if (tid == 0)
-        printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
+      // if (tid == 0)
+      //   printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
     };
 
     int edgeRank = butterfly->edgeRank, edge = 1 << log2i(comm->nRanks);
@@ -78,10 +77,6 @@ namespace {
 
     if (edgeRank != -1)
       reduce(edgeRank, !edgeSend, edgeSend, log2i(comm->nRanks) + 1);
-
-    if (tid == 0)
-      printf("Kernel Finished\n");
-    
   }
 }
 

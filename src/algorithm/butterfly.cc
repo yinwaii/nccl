@@ -8,7 +8,6 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank, nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
-  // NCCLCHECK(ncclCalloc(&peerRanks, log2i(nranks) * MAXCHANNELS));
   peerRanks = new int[log2i(nranks) * MAXCHANNELS];
 
   for (int c=0; c<nChannels; c++) {
@@ -19,8 +18,6 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
       int peer = rank ^ (1 << mask);
       peerRanks[(c+nChannels)*nranks+mask] = peerRanks[c*nranks+mask] = (rank & edge) ? -1 : peer;
     }
-    // topoRanks->butterflyLastRank[c] = (rank & (nranks - 1)) != rank;
-    // lastRanks[(c+nChannels)*nranks+0] = lastRanks[c*nranks+0] = topoRanks->butterflyLastRank[c] ? 0 : -1;
   }
 
   return ncclSuccess;
@@ -85,10 +82,8 @@ ncclResult_t ncclEnqueueButterfly::proxySaveColl(struct ncclProxyArgs *args, str
     }
     for (int i = 0; i < log2i(nRanks); i++) {
       int peer = butterfly->peerRanks[i];
-      // if (peer != -1) {
       NCCLCHECK(SaveProxy(proxySend, peer, args));
       NCCLCHECK(SaveProxy(proxyRecv, peer, args));
-      // }
     }
   }
   return ncclSuccess;
