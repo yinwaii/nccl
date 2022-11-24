@@ -51,7 +51,7 @@ ncclResult_t ncclTopoButterfly::transportSetup() {
     sprintf(line + strlen(line), "\n");
   }
   delete[] peerRanks;
-  WARN("%s", line);
+  INFO(NCCL_COLL, "%s", line);
   NCCLCHECK(ncclTransportP2pSetup(comm, &graph));
   return ncclSuccess;
 }

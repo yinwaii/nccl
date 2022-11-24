@@ -39,7 +39,7 @@ namespace {
 
     auto reduce = [&]__device__(int peer, bool send, bool recv, int step)->ssize_t {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
-        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, 0);
+        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);
 
       // if (tid == 0)
       //   printf("%d: START FOR peer %d\n", comm->rank, peer);
