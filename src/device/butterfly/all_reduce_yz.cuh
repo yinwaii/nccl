@@ -53,8 +53,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
 
   ////// Scatter ////
   for (int p = 0; p < butterfly->peerCount; p++) {
-	Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, ProtoSimple<ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, UNROLL>>
-        prims(tid, args->nThreads, &(butterfly->peerRanks[p]), &(butterfly->peerRanks[p]), thisOutput, channel, comm, 2 * p * Proto::MaxGroupWidth);
+	Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, Proto>
+        prims(tid, nthreads, &(butterfly->peerRanks[p]), &(butterfly->peerRanks[p]), thisOutput, channel, comm, 2 * p * Proto::MaxGroupWidth, true);
 
       int peerRank = butterfly->peerRanks[p];
 
@@ -129,8 +129,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
   
   ////// Gather ////
   for (int p = reducedPeerCount -1 ; p >= 0; p--) {
-	  Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, ProtoSimple<ALLREDUCE_CHUNKSTEPS / ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, UNROLL>>
-		  prims(tid, args->nThreads, &(reducedPeerRanks[p]), &(reducedPeerRanks[p]), thisOutput, channel, comm, 2 * (butterfly->peerCount + p) * Proto::MaxGroupWidth);
+	  Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, Proto>
+		  prims(tid, nthreads, &(reducedPeerRanks[p]), &(reducedPeerRanks[p]), thisOutput, channel, comm, 2 * (butterfly->peerCount + p) * Proto::MaxGroupWidth, true);
 
 	  int peerRank = reducedPeerRanks[p];
       //if(myRank == 0) printf("tid %d:LYZ - Gather, comm with %d, size %d, loopSize %d\n",tid,peerRank, commSize, loopSize);
@@ -178,8 +178,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
   if (butterfly->lastoneCompressed == 1) {
     int peerRank = butterfly->peerRanks[0];
 
-	Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, ProtoSimple<ALLREDUCE_CHUNKSTEPS / ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, UNROLL>>
-		prims(tid, args->nThreads, &(butterfly->peerRanks[0]), &(butterfly->peerRanks[0]), thisOutput, channel, comm, 2 * (butterfly->peerCount * 2) *Proto::MaxGroupWidth);
+	Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, Proto>
+		prims(tid, nthreads, &(butterfly->peerRanks[0]), &(butterfly->peerRanks[0]), thisOutput, channel, comm, 2 * (butterfly->peerCount * 2) *Proto::MaxGroupWidth, true);
 
 	for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       ssize_t realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
