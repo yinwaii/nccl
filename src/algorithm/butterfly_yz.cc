@@ -34,7 +34,7 @@ ncclResult_t ncclTopoButterfly_yz::connectButterfly(struct ncclComm* comm, int* 
   int nRanks = comm->nRanks;
   int myRank = comm->rank;
 
-  for (int c=0; c<nChannels; c++) {
+  for (int c=0; c<2 * nChannels; c++) {
     //not used for now
     int* recv = butterflyRecv+c*comm->nRanks;
     int* send = butterflySend+c*comm->nRanks;
@@ -140,11 +140,12 @@ ncclResult_t ncclTopoButterfly_yz::transportSetup() {
 }
 
 ncclResult_t ncclEnqueueButterfly_yz::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
-  if (info->coll == ncclFuncBroadcast) {
-    info->algorithm = NCCL_ALGO_RING;
-    *redirect = true;
-    return ncclSuccess;
-  }
+// Redirect Broadcast to RING Algorithm
+//   if (info->coll == ncclFuncBroadcast) {
+//     info->algorithm = NCCL_ALGO_RING;
+//     *redirect = true;
+//     return ncclSuccess;
+//   }
   NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }

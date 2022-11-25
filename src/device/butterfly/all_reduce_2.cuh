@@ -37,7 +37,7 @@ namespace {
     //   }
     // }
 
-    auto edgeReduce = [&]__device__(int peer, bool scatter, int step)->ssize_t {
+    auto edgeReduce = [&]__device__(int peer, bool scatter, int step)->void {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
         prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);
 
@@ -69,7 +69,7 @@ namespace {
       //   printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
     };
 
-    auto reduce = [&]__device__(int peer, bool scatter, int step)->ssize_t {
+    auto reduce = [&]__device__(int peer, bool scatter, int step)->void {
       int halfSize = size >> (step + 1);
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
         prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);

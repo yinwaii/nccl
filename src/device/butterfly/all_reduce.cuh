@@ -36,7 +36,7 @@ namespace {
     //   }
     // }
 
-    auto reduce = [&]__device__(int peer, bool send, bool recv, int step)->ssize_t {
+    auto reduce = [&]__device__(int peer, bool send, bool recv, int step)->void {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
         prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);
 
