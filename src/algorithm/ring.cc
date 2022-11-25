@@ -189,8 +189,7 @@ ncclResult_t ncclEnqueueRing::tuningAlgoTime(struct ncclInfo *info, int algorith
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueRing::getPattern(int coll, int *pattern) const
-{
+ncclResult_t ncclEnqueueRing::getPattern(int coll, int *pattern) const {
   switch (coll) {
     case ncclFuncBroadcast:
       *pattern = ncclPatternPipelineFrom;

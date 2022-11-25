@@ -58,7 +58,7 @@ namespace {
         // if (tid == 0) {
         //   printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
         // }
-        if ((rank < peer) & scatter)
+        if ((rank < peer) ^ scatter)
           prims.send(thisInput+chunkOffset, nelem);
         else if (scatter)
           prims.recvReduceCopy(thisInput+chunkOffset, thisOutput+chunkOffset, nelem);
@@ -88,9 +88,9 @@ namespace {
 
         ssize_t chunkOffset = gridOffset + bid * realChunkSize;
         int nelem = min(realChunkSize, commOffset+halfSize - chunkOffset);
-        if (tid == 0) {
-          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
-        }
+        // if (tid == 0) {
+        //   printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
+        // }
 
         prims.send(thisInput+chunkOffset+(((rank<peer)^scatter)?0:halfSize), nelem);
         if (scatter)

@@ -58,15 +58,25 @@ ncclResult_t ncclTopoButterfly::transportSetup() {
 
 ncclResult_t ncclEnqueueButterfly::getPattern(int coll, int *pattern) const {
   switch (coll) {
-    // case ncclFuncBroadcast:
-    //   *pattern = ncclPatternHalfDoubling;
-    //   break;
+    case ncclFuncBroadcast:
+      *pattern = ncclPatternHalfDoubling;
+      break;
     case ncclFuncAllReduce:
       *pattern = ncclPatternButterfly;
       break;
     default:
       *pattern = -1;
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueButterfly::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
+  if (info->coll == ncclFuncBroadcast) {
+    info->algorithm = NCCL_ALGO_RING;
+    *redirect = true;
+    return ncclSuccess;
+  }
+  NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }
 
