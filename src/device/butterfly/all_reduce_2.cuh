@@ -50,7 +50,7 @@ namespace {
 
     auto reduce = [&]__device__(int peer, int step, bool scatter, bool edge) -> void {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
-        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);
+        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, 0 * Proto::MaxGroupWidth);
 
       if (tid == 0)
         printf("%d: START FOR peer %d\n", comm->rank, peer);
