@@ -13,7 +13,7 @@ namespace {
   template<typename T, typename RedOp, typename Proto>
   __device__ void runButterfly2(ncclWorkElem *args) {
     const int tid = threadIdx.x;
-    const int nthreads = args->nThreads;
+    const int nthreads = args->nThreads-WARP_SIZE;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
@@ -41,7 +41,7 @@ namespace {
       ssize_t realChunkSize;
       if (Proto::Id == NCCL_PROTO_SIMPLE) {
         realChunkSize = min(chunkSize, divUp(tailOffset-gridOffset, nChannels));
-        realChunkSize = roundUp(realChunkSize, (nthreads-WARP_SIZE)*sizeof(uint64_t)/sizeof(T));
+        realChunkSize = roundUp(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
       }
       else
         realChunkSize = min(chunkSize, divUp(tailOffset-gridOffset, nChannels*minChunkSize)*minChunkSize);
@@ -50,7 +50,7 @@ namespace {
 
     auto reduce = [&]__device__(int peer, int step, bool scatter, bool edge) -> void {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
-        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);
+        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, 0 * Proto::MaxGroupWidth, true);
 
       if (tid == 0)
         printf("%d: START FOR peer %d\n", comm->rank, peer);
@@ -116,7 +116,7 @@ template<class RedOp, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_BUTTERFLY2, NCCL_PROTO_LL, RedOp, T, UNROLL> {
   public:
   __device__ void run(struct ncclWorkElem* args) {
-    runButterfly2<T, RedOp, ProtoLL>(args);
+    // runButterfly2<T, RedOp, ProtoLL>(args);
   }
 };
 
@@ -124,7 +124,7 @@ template<class RedOp, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_BUTTERFLY2, NCCL_PROTO_LL128, RedOp, T, UNROLL> {
   public:
   __device__ void run(struct ncclWorkElem* args) {
-    runButterfly2<T, RedOp, ProtoLL128>(args);
+    // runButterfly2<T, RedOp, ProtoLL128>(args);
   }
 };
 
