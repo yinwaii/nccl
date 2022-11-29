@@ -137,7 +137,7 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
   //Then send
   for (int p = 0; p < sendPeerCount; p++) {
       Primitives<T, RedOp, FanSymmetric<1>, 0, ProtoSimple<BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, UNROLL>>
-        prims(tid, nthreads, &(sendPeerRanks[p]), &(sendPeerRanks[p]), thisOutput, channel, comm, (p + 1) * 2, true);
+        prims(tid, nthreads, &(sendPeerRanks[p]), &(sendPeerRanks[p]), thisOutput, channel, comm, 0, true);
 
       //printf("Sending1 to %d \n",sendPeerRanks[p]);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
