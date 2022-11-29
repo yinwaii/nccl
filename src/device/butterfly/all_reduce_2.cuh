@@ -50,15 +50,16 @@ namespace {
 
     auto reduce = [&]__device__(int peer, int step, bool scatter, bool edge) -> void {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
-        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, 0 * Proto::MaxGroupWidth);
+        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm, step * Proto::MaxGroupWidth);
 
       if (tid == 0)
         printf("%d: START FOR peer %d\n", comm->rank, peer);
-      ssize_t initOffset = edge ? 0 : commOffset, length = edge ? size : (size >> (step + 1));
+      ssize_t length = edge ? size : (size >> (step + 1));
       ssize_t splitOffset = edge ? 0 : length;
       bool forward = rank < peer, direction = scatter ? forward : !forward;
       if (!forward && !scatter)
         commOffset -= splitOffset;
+      ssize_t initOffset = edge ? 0 : commOffset;
       for (ssize_t gridOffset = initOffset; gridOffset < initOffset + length; gridOffset += loopSize)
       {
         ssize_t realChunkSize = getRealChunkSize(gridOffset, initOffset + length);

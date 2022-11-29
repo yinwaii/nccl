@@ -141,11 +141,11 @@ ncclResult_t ncclTopoButterfly_yz::transportSetup() {
 
 ncclResult_t ncclEnqueueButterfly_yz::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
   // Redirect Broadcast to RING Algorithm
-  if (info->coll == ncclFuncBroadcast) {
-    info->algorithm = NCCL_ALGO_RING;
-    *redirect = true;
-    return ncclSuccess;
-  }
+//   if (info->coll == ncclFuncBroadcast) {
+//     info->algorithm = NCCL_ALGO_RING;
+//     *redirect = true;
+//     return ncclSuccess;
+//   }
   NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }
