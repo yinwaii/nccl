@@ -20,7 +20,15 @@ struct ncclTransport ncclTransports[NTRANSPORTS] = {
 
 template <int type>
 static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int channelId) {
-  for (int t=0; t<NTRANSPORTS; t++) {
+  int initTrans = 0;
+  const char* nccl_transport = getenv("NCCL_TRANSPORT");
+  if (nccl_transport == NULL || strcasecmp(nccl_transport, "P2P") == 0)
+    initTrans = TRANSPORT_P2P;
+  else if (strcasecmp(nccl_transport, "SHM") == 0)
+    initTrans = TRANSPORT_SHM;
+  else if (strcasecmp(nccl_transport, "NET") == 0)
+    initTrans = TRANSPORT_NET;
+  for (int t=initTrans; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
