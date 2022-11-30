@@ -1070,6 +1070,10 @@ ncclResult_t wrap_ibv_create_comp_channel(struct ibv_comp_channel **ret, struct 
 ncclResult_t wrap_ibv_destroy_comp_channel(struct ibv_comp_channel *channel);
 ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector);
 ncclResult_t wrap_ibv_destroy_cq(struct ibv_cq *cq);
+// completion queue, 确认数据发完 注册内存，没注册completion queue（和working queue比较）
+// 找一段简单的ib代码，复现问题
+// butterfly horovod x nccl_test x 报错信息一样
+// butterfly_yz v-2.7.8-butterfly horovod ok, 有时候也会x nccl_test x
 static inline ncclResult_t wrap_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc, int* num_done) {
   int done = cq->context->ops.poll_cq(cq, num_entries, wc); /*returns the number of wcs or 0 on success, a negative number otherwise*/
   if (done < 0) {
