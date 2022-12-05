@@ -177,6 +177,7 @@ __device__ void ncclBroadcastButterflyKernel(struct CollectiveArgs* args) {
           //prims.recv(thisOutput+offset, nelem);
           prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
       }
+      prims.conRecv(thisOutput, 1);
   }
   //Then send
   for (int p = 0; p < sendPeerCount; p++) {
@@ -206,6 +207,7 @@ __device__ void ncclBroadcastButterflyKernel(struct CollectiveArgs* args) {
             //prims.send(thisInput+offset, nelem);
           }
       }
+      prims.conSend(thisInput, 1);
   }
 }
 

@@ -192,6 +192,8 @@ __device__ void ncclAllReduceButterflyKernel(struct CollectiveArgs* args) {
         reducedPeerRanks[reducedPeerCount] = peerRank;
         reducedPeerCount++;
       }
+      prims.conRecv(thisOutput, 1);
+      prims.conSend(thisInput, 1);
   }
   
   ////// Gather ////
@@ -239,6 +241,8 @@ __device__ void ncclAllReduceButterflyKernel(struct CollectiveArgs* args) {
           }
 	  //if(myRank == 0) printf("tid %d:LYZ - Recv done - loop %d \n",tid,loopCount);
       }
+      prims.conRecv(thisOutput, 1);
+      prims.conSend(thisInput, 1);
     }
 
   //finally, send to the reduced ranks

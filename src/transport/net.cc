@@ -395,7 +395,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->head < args->end) {
       volatile uint64_t* sendHead = &resources->sendMem->head;
       //printf("Mem head %llu\n", *sendHead);
-      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
+      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + 0) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
         int sliceSize = stepSize * args->sliceSteps;
 	//printf("Opcount %d: Doing NetRecv\n", args->opCount);
