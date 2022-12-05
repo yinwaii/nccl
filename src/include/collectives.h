@@ -4,6 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "algo_config.h"
+
 #ifndef NCCL_COLLECTIVES_H_
 #define NCCL_COLLECTIVES_H_
 
@@ -16,6 +18,8 @@
 #define NCCL_KERN_NAME(coll, op, dtype) \
   coll##Kernel_##op##_##dtype
 
+#define WITH_COMMA(content) content,
+
 /* Declare all collective operations */
 #define DECL_COLL5(coll, op, dtype) \
   extern __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args); \
@@ -26,10 +30,11 @@
   DECL_COLL5(coll##LL, op, dtype) \
   DECL_COLL5(coll##LL128, op, dtype)
 
+#define DECL4_ELE(algo, coll, op, dtype) \
+  DECL_COLL4(coll##algo, op, dtype)
+
 #define DECL_COLL3(coll, op, dtype) \
-  DECL_COLL4(coll##Ring, op, dtype) \
-  DECL_COLL4(coll##Tree, op, dtype) \
-  DECL_COLL4(coll##CollNet, op, dtype)
+  MAP_FOR_ALGOS(DECL4_ELE, coll, op, dtype)
 
 #define DECL_COLL2(coll, op) \
   DECL_COLL3(coll, op, i8) \

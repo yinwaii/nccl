@@ -49,10 +49,6 @@ ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* arch, int* vend
 // Init search. Needs to be done before calling ncclTopoCompute
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 
-#define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction
-#define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Split tree (send/recv from different ranks) flowing in both directions
-#define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
-#define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
   // Input / output
   int id; // ring : 0, tree : 1, collnet : 2
@@ -76,17 +72,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs);
-
-struct ncclTopoRanks {
-  int ringRecv[MAXCHANNELS];
-  int ringSend[MAXCHANNELS];
-  int ringPrev[MAXCHANNELS];
-  int ringNext[MAXCHANNELS];
-  int treeUpRecv[MAXCHANNELS];
-  int treeUpSend[MAXCHANNELS];
-  int treeDnRecv[MAXCHANNELS];
-  int treeDnSend[MAXCHANNELS];
-};
 
 struct ncclGraphInfo {
   int sameChannels;

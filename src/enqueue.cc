@@ -8,59 +8,61 @@
 #include "argcheck.h"
 #include "interface.h"
 #include "coll_net.h"
+#include "algo_config.h"
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(coll, op, dtype) \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
+  (void*)WITH_COMMA(NCCL_KERN_NAME(coll##LL, op, dtype))  \
+  (void*)WITH_COMMA(NCCL_KERN_NAME(coll##LL, op, dtype))  \
+  (void*)WITH_COMMA(NCCL_KERN_NAME(coll##LL, op, dtype))
+
+#define NCCL_FUNC5_ELE(algo, coll, op, dtype)  \
+  (void*)NCCL_FUNC5(coll##algo, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
-  (void*)NCCL_FUNC5(coll##Tree, op, dtype), \
-  (void*)NCCL_FUNC5(coll##Ring, op, dtype), \
-  (void*)NCCL_FUNC5(coll##CollNet, op, dtype)
+  MAP_FOR_ALGOS(NCCL_FUNC5_ELE, coll, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  u8), \
-  (void*)NCCL_FUNC4(coll, op, i32), \
-  (void*)NCCL_FUNC4(coll, op, u32), \
-  (void*)NCCL_FUNC4(coll, op, i64), \
-  (void*)NCCL_FUNC4(coll, op, u64), \
-  (void*)NCCL_FUNC4(coll, op, f16), \
-  (void*)NCCL_FUNC4(coll, op, f32), \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  u8)  \
+  (void*)NCCL_FUNC4(coll, op, i32)  \
+  (void*)NCCL_FUNC4(coll, op, u32)  \
+  (void*)NCCL_FUNC4(coll, op, i64)  \
+  (void*)NCCL_FUNC4(coll, op, u64)  \
+  (void*)NCCL_FUNC4(coll, op, f16)  \
+  (void*)NCCL_FUNC4(coll, op, f32)  \
   (void*)NCCL_FUNC4(coll, op, f64)
 #define NCCL_FUNCS3B(coll, op) \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
+  (void*)NCCL_FUNC4(coll, op,  i8)  \
   (void*)NCCL_FUNC4(coll, op,  i8)
 
 // Must be consistent with ncclRedOp_t -- but we only generate kernel for sums.
 #define NCCL_FUNCS2A(coll) \
-  NCCL_FUNCS3A(coll, sum), \
-  NCCL_FUNCS3A(coll, sum), \
-  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum)  \
+  NCCL_FUNCS3A(coll, sum)  \
+  NCCL_FUNCS3A(coll, sum)  \
   NCCL_FUNCS3A(coll, sum)
 #define NCCL_FUNCS2B(coll) \
-  NCCL_FUNCS3B(coll, copy), \
-  NCCL_FUNCS3B(coll, copy), \
-  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy)  \
+  NCCL_FUNCS3B(coll, copy)  \
+  NCCL_FUNCS3B(coll, copy)  \
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
 static void* const ncclKerns[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
-  (void*)NCCL_KERN_NAME(ncclSendRecv, copy, i8),
-  NCCL_FUNCS2B(ncclBroadcast),
-  NCCL_FUNCS2A(ncclReduce),
-  NCCL_FUNCS2B(ncclAllGather),
-  NCCL_FUNCS2A(ncclReduceScatter),
+  (void*)WITH_COMMA(NCCL_KERN_NAME(ncclSendRecv, copy, i8))
+  NCCL_FUNCS2B(ncclBroadcast)
+  NCCL_FUNCS2A(ncclReduce)
+  NCCL_FUNCS2B(ncclAllGather)
+  NCCL_FUNCS2A(ncclReduceScatter)
   NCCL_FUNCS2A(ncclAllReduce)
 };
 
