@@ -9,6 +9,7 @@
 
 #include "transport.h"
 #include "p2p.h"
+#include <array>
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {

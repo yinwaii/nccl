@@ -200,8 +200,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 }
 
 ncclResult_t ncclTuningAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
-  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
-  float lat = info->comm->latencies[info->coll][algorithm][protocol];
+  float bw = info->comm->tuning[algorithm].bandwidths[info->coll][protocol];
+  float lat = info->comm->tuning[algorithm].latencies[info->coll][protocol];
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }
