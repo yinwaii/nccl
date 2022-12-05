@@ -5,18 +5,21 @@
 #define MAP_FOR_ALGOS(f, ...) \
 	f(Tree, ##__VA_ARGS__) \
 	f(Ring, ##__VA_ARGS__) \
-	f(CollNet, ##__VA_ARGS__)
+	f(CollNet, ##__VA_ARGS__) \
+  f(Butterfly, ##__VA_ARGS__)
 
-#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
+#define NCCL_ALGO_BUTTERFLY_YZ 3
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Split tree (send/recv from different ranks) flowing in both directions
 #define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
+#define NCCL_TOPO_PATTERN_BUTTERFLY 5       // Butterfly
 
 struct ncclRing {
   // Shortcuts for userRanks[1] and userRanks[n-1]
@@ -38,6 +41,15 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
+#define NCCL_MAX_BUTTERFLY_STEPS 10
+struct ncclButterfly
+{
+  int myRank;
+  int peerCount;
+  int lastoneCompressed;
+  int peerRanks[NCCL_MAX_BUTTERFLY_STEPS];
+};
+
 struct ncclChannel {
   union {
     struct {
@@ -46,6 +58,7 @@ struct ncclChannel {
       struct ncclTree treeDn;
       struct ncclTree collTreeUp;
       struct ncclTree collTreeDn;
+      struct ncclButterfly butterfly;
 
       int id;
 
@@ -75,6 +88,9 @@ struct ncclTopoRanks {
   int treeUpSend[MAXCHANNELS];
   int treeDnRecv[MAXCHANNELS];
   int treeDnSend[MAXCHANNELS];
+  // butterfly - lyz
+  int butterflyRecv[MAXCHANNELS];
+  int butterflySend[MAXCHANNELS];
 };
 
 

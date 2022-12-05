@@ -100,9 +100,11 @@ class ncclPrimitives {
     spins = 0;
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + SLICESTEPS) {
+	//printf("wait send t:%d\n",tid);
         sendConnHeadCache = *sendConnHeadPtr;
         if (checkAbort(wid, 1)) break;
       }
+      //printf("wait send t:%d done\n",tid);
       if (sendConnFifoPtr) {
         sendConnFifoPtr[sendConnHead%NCCL_STEPS] = nbytes;
       }
@@ -114,9 +116,11 @@ class ncclPrimitives {
     spins = 0;
     if (recvConnTailPtr) {
       while (recvConnTailCache < recvConnTail + SLICESTEPS) {
+	//printf("wait recv t:%d\n",tid);
         recvConnTailCache = *recvConnTailPtr;
         if (checkAbort(wid, 0)) break;
       }
+      //printf("wait recv t:%d done\n",tid);
       recvConnTail += SLICESTEPS;
     }
   }

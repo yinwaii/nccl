@@ -48,6 +48,10 @@ __device__ void ncclReduceRingKernel(struct CollectiveArgs* args) {
   }
 }
 
+//butterfly - lyz
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceButterflyKernel(struct CollectiveArgs* args) { }
+
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceTreeKernel(struct CollectiveArgs* args) { }
 
@@ -95,6 +99,10 @@ __device__ void ncclReduceRingLLKernel(struct CollectiveArgs* args) {
   }
 }
 
+//butterfly - lyz
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceButterflyLLKernel(struct CollectiveArgs* args) { }
+
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceTreeLLKernel(struct CollectiveArgs* args) { }
 
@@ -141,6 +149,10 @@ __device__ void ncclReduceRingLL128Kernel(struct CollectiveArgs* args) {
     }
   }
 }
+
+//butterfly - lyz
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceButterflyLL128Kernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceTreeLL128Kernel(struct CollectiveArgs* args) { }

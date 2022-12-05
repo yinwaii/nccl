@@ -68,7 +68,7 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
 }
 
 template <int type>
-ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
+ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args, int inconsistent_nsteps) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
@@ -86,6 +86,9 @@ ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   op->connector = connector;
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
+  // lyz - segmented
+  if (inconsistent_nsteps > 0)
+    op->nsteps = inconsistent_nsteps;
   ProxyAppend(connector, op);
   return ncclSuccess;
 }

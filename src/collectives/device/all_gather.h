@@ -68,6 +68,11 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
 }
 
 template<int UNROLL, class FUNC, typename T>
+__device__ void ncclAllGatherButterflyKernel(struct CollectiveArgs* args) {
+  
+}
+
+template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllGatherTreeKernel(struct CollectiveArgs* args) { }
 
 template<int UNROLL, class FUNC, typename T>
@@ -129,6 +134,12 @@ __device__ void ncclAllGatherRingLLKernel(struct CollectiveArgs* args) {
 
     LLprims.recv(thisOutput+offset, nelem);
   }
+}
+
+//butterfly - lyz
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherButterflyLLKernel(struct CollectiveArgs* args) {
+  
 }
 
 template<int UNUSED, class FUNC, typename T>
@@ -202,3 +213,7 @@ __device__ void ncclAllGatherTreeLL128Kernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherCollNetLL128Kernel(struct CollectiveArgs* args) { }
+
+//butterfly - lyz
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherButterflyLL128Kernel(struct CollectiveArgs* args) { }

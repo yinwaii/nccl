@@ -62,6 +62,10 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   }
 }
 
+//butterfly - lyz
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceScatterButterflyKernel(struct CollectiveArgs* args) { }
+
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeKernel(struct CollectiveArgs* args) { }
 
@@ -122,6 +126,10 @@ __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
     LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
   }
 }
+
+//butterfly - lyz
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceScatterButterflyLLKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLLKernel(struct CollectiveArgs* args) { }
@@ -185,6 +193,10 @@ __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
     LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
   }
 }
+
+//butterfly - lyz
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceScatterButterflyLL128Kernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLL128Kernel(struct CollectiveArgs* args) { }

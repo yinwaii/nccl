@@ -4,6 +4,7 @@
 #include "ring.h"
 #include "tree.h"
 #include "algo_config.h"
+#include "butterfly_yz.h"
 #include "comm.h"
 #include "../graph/topo.h"
 #include "../graph/tuning.h"
