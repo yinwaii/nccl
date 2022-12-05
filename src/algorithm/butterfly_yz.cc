@@ -34,7 +34,7 @@ ncclResult_t ncclTopoButterfly_yz::connectButterfly(struct ncclComm* comm, int* 
   int nRanks = comm->nRanks;
   int myRank = comm->rank;
 
-  for (int c=0; c<nChannels; c++) {
+  for (int c=0; c< 2 * nChannels; c++) {
     //not used for now
     int* recv = butterflyRecv+c*comm->nRanks;
     int* send = butterflySend+c*comm->nRanks;
@@ -345,4 +345,24 @@ ncclResult_t ncclEnqueueButterfly_yz::enqueueLoopInfo(struct ncclInfo *info) con
     return ncclInternalError;
   }
   return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueButterfly_yz::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const
+{
+	switch (info->protocol)
+	{
+	case NCCL_PROTO_SIMPLE:
+	{
+		sliceInfo->chunkSteps = info->chunkSteps;
+		sliceInfo->sliceSteps = info->sliceSteps;
+		sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
+		break;
+	}
+	default:
+	{
+		this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
+		break;
+	}
+	}
+	return ncclSuccess;
 }
