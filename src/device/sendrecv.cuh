@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #include "devcomm.h"
-#include "primitives.h"
+#include "primitives.cuh"
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>

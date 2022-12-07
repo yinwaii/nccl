@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "reduce_scatter.h"
-#include "common.h"
+#include "reduce.cuh"
+#include "common.cuh"
 #include "collectives.h"
 
-IMPL_COLL_R(ncclReduceScatter, ncclCollReduceScatter);
+IMPL_COLL_R(ncclReduce, ncclCollReduce);

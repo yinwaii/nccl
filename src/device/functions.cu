@@ -6,7 +6,7 @@
 
 #include "devcomm.h"
 #include "collectives.h"
-#include "common.h"
+#include "common.cuh"
 #include "algo_config.h"
 
 __device__ volatile uint64_t* ncclShmem;

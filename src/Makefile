@@ -38,7 +38,7 @@ LIBOBJ     := $(LIBSRCFILES:%.cc=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -l$(CUDARTLIB) -lpthread -lrt -ldl
 
-DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
+DEVICELIB  := $(BUILDDIR)/obj/device/colldevice.a
 
 ##### rules
 build : lib staticlib
@@ -48,7 +48,7 @@ lib : $(INCTARGETS) $(LIBDIR)/$(LIBTARGET) $(PKGDIR)/$(PKGTARGET)
 staticlib : $(LIBDIR)/$(STATICLIBTARGET)
 
 $(DEVICELIB): ALWAYS_REBUILD $(INCTARGETS)
-	$(MAKE) -C collectives/device
+	$(MAKE) -C device
 
 # Empty target to force rebuild
 ALWAYS_REBUILD:

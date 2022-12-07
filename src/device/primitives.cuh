@@ -8,8 +8,8 @@
 #define NCCL_PRIMITIVES_H_
 
 #include <type_traits>
-#include "reduce_kernel.h" // for reduction funcs
-#include "common.h"
+#include "reduce_kernel.cuh" // for reduction funcs
+#include "common.cuh"
 
 #define SPINS_BEFORE_CHECK_ABORT 1000000
 
@@ -360,7 +360,7 @@ class ncclPrimitives {
   }
 };
 
-#include "prims_ll.h"
-//#include "prims_ll128.h"
+#include "prims_ll.cuh"
+//#include "prims_ll128.cuh"
 
 #endif

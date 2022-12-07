@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #include "devcomm.h"
-#include "primitives.h"
+#include "primitives.cuh"
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>
@@ -956,7 +956,7 @@ __device__ void ncclAllReduceCollNetLLKernel(struct CollectiveArgs* args) {
   }
 }
 
-#include "prims_ll128.h"
+#include "prims_ll128.cuh"
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceRingLL128Kernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;

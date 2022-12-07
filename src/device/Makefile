@@ -4,11 +4,11 @@
 # See LICENSE.txt for license information
 #
 
-include ../../../makefiles/common.mk
-include ../../../makefiles/version.mk
+include ../../makefiles/common.mk
+include ../../makefiles/version.mk
 
-BUILDDIR ?= $(abspath ../../../build)
-OBJDIR := $(BUILDDIR)/obj/collectives/device
+BUILDDIR ?= $(abspath ../../build)
+OBJDIR := $(BUILDDIR)/obj/device
 
 LIBSRCFILES := all_reduce.cu broadcast.cu reduce.cu all_gather.cu reduce_scatter.cu sendrecv.cu
 
@@ -20,7 +20,7 @@ STATICLIB  := $(OBJDIR)/colldevice.a
 DEVOBJ     := $(OBJDIR)/devlink.o
 RULESFILE  := $(OBJDIR)/Makefile.rules
 
-NVCUFLAGS  += -I. -I.. -I$(BUILDDIR)/include -I../../include -I../../algorithm --compiler-options "-fPIC -fvisibility=hidden"
+NVCUFLAGS  += -I. -I.. -I$(BUILDDIR)/include -I../include -I../algorithm --compiler-options "-fPIC -fvisibility=hidden"
 
 
 all: $(STATICLIB)

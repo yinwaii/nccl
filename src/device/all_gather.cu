@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "all_gather.h"
-#include "common.h"
+#include "all_gather.cuh"
+#include "common.cuh"
 #include "collectives.h"
 
 IMPL_COLL_C(ncclAllGather, ncclCollAllGather);

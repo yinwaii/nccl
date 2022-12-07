@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "broadcast.h"
-#include "common.h"
+#include "all_reduce.cuh"
+#include "common.cuh"
 #include "collectives.h"
 
-IMPL_COLL_C(ncclBroadcast, ncclCollBroadcast);
+IMPL_COLL_R(ncclAllReduce, ncclCollAllReduce);

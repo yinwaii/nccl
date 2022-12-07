@@ -5,11 +5,11 @@
  ************************************************************************/
 
 #include "devcomm.h"
-#include "primitives.h"
+#include "primitives.cuh"
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = args->coll.nThreads-WARP_SIZE;
   const int bid = args->coll.bid;
@@ -18,7 +18,7 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
   const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
-  const int chunkSize = stepSize * REDUCESCATTER_CHUNKSTEPS;
+  const int chunkSize = stepSize * ALLGATHER_CHUNKSTEPS;
   const int nranks = comm->nRanks;
   const ssize_t loopSize = nChannels*(ssize_t)chunkSize;
   const ssize_t size = args->coll.count;
@@ -27,53 +27,59 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->sendbuff;
   T * __restrict__ thisOutput = (T*)args->recvbuff;
 
-  ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, 1, 1, 0, FUNC>
-    prims(tid, nthreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm);
+  ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS, T, 1, 1, 1, FUNC>
+    prims(tid, nthreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
     ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*realChunkSize;
 
-    /////////////// begin ReduceScatter steps ///////////////
+    /////////////// begin AllGather steps ///////////////
     ssize_t offset;
     int nelem = min(realChunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
-    rankDest = ring->devUserRanks[nranks-1];
-    offset = chunkOffset + rankDest * size;
-
-    prims.send(thisInput+offset, nelem);
-
-    // k-2 steps: reduce and copy to next GPU
-    for (int j=2; j<nranks; ++j) {
-      rankDest = ring->devUserRanks[nranks-j];
-      offset = chunkOffset + rankDest * size;
-
-      prims.recvReduceSend(thisInput+offset, nelem);
-    }
-
-    // step k-1: reduce this buffer and data, which will produce the final result
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    prims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
+    if (thisInput + chunkOffset == thisOutput + offset) { // In place
+      prims.directSend(thisInput+chunkOffset, offset, nelem);
+    } else {
+      prims.directCopySend(thisInput+chunkOffset, thisOutput+offset, offset, nelem);
+    }
+
+    // k-2 steps: copy to next GPU
+    for (int j=1; j<nranks-1; ++j) {
+      rankDest = ring->devUserRanks[nranks-j];
+      offset = chunkOffset + rankDest * size;
+
+      prims.directRecvCopySend(thisOutput+offset, offset, nelem);
+    }
+
+    // Make final copy from buffer to dest.
+    rankDest = ring->devUserRanks[1];
+    offset = chunkOffset + rankDest * size;
+
+    // Final wait/copy.
+    prims.directRecv(thisOutput+offset, offset, nelem);
   }
 }
 
-//butterfly - lyz
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterButterflyKernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherButterflyKernel(struct CollectiveArgs* args) {
+  
+}
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterTreeKernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherTreeKernel(struct CollectiveArgs* args) { }
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterCollNetKernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherCollNetKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllGatherRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = args->coll.nThreads;
   const int bid = args->coll.bid;
@@ -99,47 +105,52 @@ __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
     }
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
-    /////////////// begin ReduceScatter steps ///////////////
+    /////////////// begin AllGather steps ///////////////
     ssize_t offset;
     int nelem = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
-    rankDest = ring->devUserRanks[nranks-1];
-    offset = chunkOffset + rankDest * size;
-
-    LLprims.send(thisInput+offset, nelem);
-
-    // k-2 steps: reduce and copy to next GPU
-    for (int j=2; j<nranks; ++j) {
-      rankDest = ring->devUserRanks[nranks-j];
-      offset = chunkOffset + rankDest * size;
-
-      LLprims.recvReduceSend(thisInput+offset, nelem);
-    }
-
-    // step k-1: reduce this buffer and data, which will produce the final
-    // result that we store in this data
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
+    if (thisInput + chunkOffset == thisOutput + offset) { // In place
+      LLprims.send(thisInput+chunkOffset, nelem);
+    } else {
+      LLprims.copySend(thisInput+chunkOffset, thisOutput+offset, nelem);
+    }
+
+    // k-2 steps: copy to next GPU
+    for (int j=1; j<nranks-1; ++j) {
+      rankDest = ring->devUserRanks[nranks-j];
+      offset = chunkOffset + rankDest * size;
+
+      LLprims.recvCopySend(thisOutput+offset, nelem);
+    }
+
+    // step k-1: final store
+    rankDest = ring->devUserRanks[1];
+    offset = chunkOffset + rankDest * size;
+
+    LLprims.recv(thisOutput+offset, nelem);
   }
 }
 
 //butterfly - lyz
-template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterButterflyLLKernel(struct CollectiveArgs* args) { }
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherButterflyLLKernel(struct CollectiveArgs* args) {
+  
+}
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterTreeLLKernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherTreeLLKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterCollNetLLKernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherCollNetLLKernel(struct CollectiveArgs* args) { }
 
-#include "prims_ll128.h"
+#include "prims_ll128.cuh"
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
+__device__ void ncclAllGatherRingLL128Kernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = args->coll.nThreads;
   const int bid = args->coll.bid;
@@ -166,40 +177,43 @@ __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
 
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
-    /////////////// begin ReduceScatter steps ///////////////
+    /////////////// begin AllGather steps ///////////////
     ssize_t offset;
     int nelem = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
-    rankDest = ring->devUserRanks[nranks-1];
-    offset = chunkOffset + rankDest * size;
-
-    LLprims.send(thisInput+offset, nelem);
-
-    // k-2 steps: reduce and copy to next GPU
-    for (int j=2; j<nranks; ++j) {
-      rankDest = ring->devUserRanks[nranks-j];
-      offset = chunkOffset + rankDest * size;
-
-      LLprims.recvReduceSend(thisInput+offset, nelem);
-    }
-
-    // step k-1: reduce this buffer and data, which will produce the final
-    // result that we store in this data
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
+    if (thisInput + chunkOffset == thisOutput + offset) { // In place
+      LLprims.send(thisInput+chunkOffset, nelem);
+    } else {
+      LLprims.copySend(thisInput+chunkOffset, thisOutput+offset, nelem);
+    }
+
+    // k-2 steps: copy to next GPU
+    for (int j=1; j<nranks-1; ++j) {
+      rankDest = ring->devUserRanks[nranks-j];
+      offset = chunkOffset + rankDest * size;
+
+      LLprims.recvCopySend(thisOutput+offset, nelem);
+    }
+
+    // step k-1: final store
+    rankDest = ring->devUserRanks[1];
+    offset = chunkOffset + rankDest * size;
+
+    LLprims.recv(thisOutput+offset, nelem);
   }
 }
 
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherTreeLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherCollNetLL128Kernel(struct CollectiveArgs* args) { }
+
 //butterfly - lyz
-template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterButterflyLL128Kernel(struct CollectiveArgs* args) { }
-
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterTreeLL128Kernel(struct CollectiveArgs* args) { }
-
-template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterCollNetLL128Kernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherButterflyLL128Kernel(struct CollectiveArgs* args) { }

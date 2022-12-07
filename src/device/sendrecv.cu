@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "sendrecv.h"
-#include "common.h"
+#include "sendrecv.cuh"
+#include "common.cuh"
 #include "collectives.h"
 
 #if NCCL_OP == 0 && NCCL_TYPE == 0
