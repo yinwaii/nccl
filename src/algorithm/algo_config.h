@@ -6,13 +6,17 @@
 	f(TREE, ##__VA_ARGS__) \
 	f(RING, ##__VA_ARGS__) \
 	f(COLLNET, ##__VA_ARGS__) \
+  f(BUTTERFLY, ##__VA_ARGS__) \
+  f(BUTTERFLY2, ##__VA_ARGS__) \
   f(BUTTERFLY_YZ, ##__VA_ARGS__)
 
-#define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 6 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
-#define NCCL_ALGO_BUTTERFLY_YZ 3
+#define NCCL_ALGO_BUTTERFLY 3
+#define NCCL_ALGO_BUTTERFLY2 4
+#define NCCL_ALGO_BUTTERFLY_YZ 5
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction
@@ -41,8 +45,14 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
+struct ncclButterfly {
+  int edgeRank;
+  int *peerRanks;
+  int *devPeerRanks;
+};
+
 #define NCCL_MAX_BUTTERFLY_STEPS 10
-struct ncclButterfly
+struct ncclButterfly_yz
 {
   int myRank;
   int peerCount;
@@ -59,6 +69,7 @@ struct ncclChannel {
       struct ncclTree collTreeUp;
       struct ncclTree collTreeDn;
       struct ncclButterfly butterfly;
+      struct ncclButterfly_yz butterfly_yz;
 
       int id;
 

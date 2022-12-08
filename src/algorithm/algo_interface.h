@@ -5,6 +5,8 @@
 #include "tree.h"
 #include "algo_config.h"
 #include "butterfly_yz.h"
+#include "butterfly.h"
+#include "butterfly2.h"
 #include "comm.h"
 #include "../graph/topo.h"
 #include "../graph/tuning.h"

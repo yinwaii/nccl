@@ -8,7 +8,7 @@
 #include "primitives.cuh"
 #include "collectives.h"
 
-//butterfly - lyz
+//butterfly_yz - lyz
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
@@ -22,7 +22,7 @@ class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
-    //struct ncclButterfly* butterfly = &channel->butterfly;
+    //struct ncclButterfly_yz* butterfly_yz = &channel->butterfly_yz;
     const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
     const int chunkSize = stepSize * BROADCAST_CHUNKSTEPS;
     //const int nranks = comm->nRanks;
@@ -34,7 +34,7 @@ class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
 
-    struct ncclButterfly* butterfly = &channel->butterfly;
+    struct ncclButterfly_yz* butterfly_yz = &channel->butterfly_yz;
     /** HD broadcast basing on the structure of butter fly **/
     //determine the peer ranks
     int recvPeerRank = -1;

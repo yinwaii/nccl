@@ -51,7 +51,8 @@ ncclResult_t ncclEnqueueBase::tuningAlgoTime(struct ncclInfo *info, int algorith
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueBase::enqueuePattern(struct ncclInfo* info) const {
+ncclResult_t ncclEnqueueBase::enqueuePattern(struct ncclInfo* info, bool *redirect) const {
+  *redirect = false;
   NCCLCHECK(this->getPattern(info->coll, &info->pattern));
   if (info->pattern < 0) {
     WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);

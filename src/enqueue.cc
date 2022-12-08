@@ -302,7 +302,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
-  NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info));
+  bool redirect = true;
+  while (redirect) {
+    NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info, &redirect));
+  }
   info->nSubChannels = 1;
   NCCLCHECK(ncclAlgos[info->algorithm]->enqueueLoopInfo(info));
 

@@ -1,276 +1,124 @@
-/*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
- *
- * See LICENSE.txt for license information
- ************************************************************************/
 
+
+#ifndef __BUTTERFLY_ALL_REDUCE_H__
+#define __BUTTERFLY_ALL_REDUCE_H__
+#include "collectives.h"
 #include "devcomm.h"
 #include "primitives.cuh"
-#include "collectives.h"
 
-//segmented butterfly - lyz
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+namespace {
+  __host__ __device__ static long log2i(long n) {
+    long l = 0;
+    while (n >>= 1) l++;
+    return l;
+  }
+}
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
   public:
   __device__ void run(struct CollectiveArgs* args) {
-    const int tid = threadIdx.x;
+		const int tid = threadIdx.x;
     const int nthreads = args->coll.nThreads-WARP_SIZE;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
-    //struct ncclButterfly* butterfly = &channel->butterfly;
-    const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
+    struct ncclButterfly* butterfly = &channel->butterfly;
+		const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
     const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
-    //const int nranks = comm->nRanks;
-    const ssize_t loopSize = nChannels*(ssize_t)chunkSize;
+    const ssize_t loopSize = int(nChannels*chunkSize);
     const ssize_t size = args->coll.count;
+    int rank = comm->rank, commOffset = 0;
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-    //help keep track of the offsets and size
-    int reducedPeerRanks[1024]; 
-    //int peerRecvOffsets[1024];
-    //int peerFirstHalfSizes[1024];
-    //int peerSendOffsets[1024];
-    int peerHalfSizes[1024];
-    int reducedPeerCount = 0;
-
-    /////////////// begin Segmented Butterfly steps ///////////////
-    int commOffset = 0;
-    int commSize = size;
-    struct ncclButterfly* butterfly = &channel->butterfly;
-    int myRank = comm->rank;
-
-    ////// Scatter ////
-    for (int p = 0; p < butterfly->peerCount; p++) {
-        ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC>
-          prims(tid, nthreads, &(butterfly->peerRanks[p]), &(butterfly->peerRanks[p]), thisOutput, stepSize, channel, comm);
-
-        int peerRank = butterfly->peerRanks[p];
-
-        //if(myRank == 0) printf("tid %d:LYZ - Scatter, comm with %d, size %d, loopSize %d, compressed %d\n",tid,peerRank, commSize, loopSize,butterfly->lastoneCompressed);
-        if (p == (butterfly->peerCount - 1) && butterfly->lastoneCompressed == 1) continue; 
-        //send the entire data block to the neighbor
-        if (p==0 && butterfly->lastoneCompressed == 1) {
-    //if(myRank == 0) printf("LYZ - BUG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-            ssize_t realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
-            ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-            ssize_t chunkOffset = gridOffset + bid*realChunkSize;
-            ssize_t offset;
-            int nelem;
-            offset = chunkOffset;
-            nelem = min(realChunkSize, size-offset);
-            if (myRank < peerRank) {
-              prims.send(thisInput+offset, nelem);
-            }
-            else{
-              prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-            }
-          }
-        }
-        else{
-          //looping
-          int halfSize = commSize/2;
-
-          //modification required - lyz
-          //send first half
-          //int finishedSize = 0; //help determine if the second half requires an extra round
-          int loopCount = 0;
-          for (ssize_t gridOffset = commOffset; gridOffset < commOffset + halfSize; gridOffset += loopSize) {
-            //finishedSize += loopSize;
-            loopCount++;
-            ssize_t realChunkSize = min(chunkSize, DIVUP(commOffset + halfSize - gridOffset,nChannels));
-            ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-            ssize_t chunkOffset_first = gridOffset + bid*realChunkSize;
-            ssize_t chunkOffset_second = chunkOffset_first + halfSize;
-
-            /////////////// begin Butterfly steps ///////////////
-            int nelem;
-            nelem = min(realChunkSize, commOffset + halfSize - chunkOffset_first); //nelems for the first and second half are the same
-            
-            //First both send
-            if (myRank < peerRank) {
-              prims.send(thisInput+chunkOffset_second, nelem);
-            }
-            else{
-              prims.send(thisInput+chunkOffset_first, nelem);
-            }
-
-            //if(myRank == 0) printf("tid %d:LYZ - 1Send done - loop %d \n",tid,loopCount);
-            //Then both recv
-            if (myRank < peerRank) {
-              prims.recvReduceCopy(thisInput+chunkOffset_first, thisOutput+chunkOffset_first, nelem);
-            }
-            else{
-              prims.recvReduceCopy(thisInput+chunkOffset_second, thisOutput+chunkOffset_second, nelem);
-            }
-      //if(myRank == 0) printf("tid %d:LYZ - 1Recv done - loop %d \n",tid,loopCount);
-          }
-
-
-          if (myRank > peerRank) commOffset += halfSize;
-          commSize = halfSize;
-          peerHalfSizes[reducedPeerCount] = halfSize;
-          reducedPeerRanks[reducedPeerCount] = peerRank;
-          reducedPeerCount++;
-        }
-    }
-    
-    ////// Gather ////
-    for (int p = reducedPeerCount -1 ; p >= 0; p--) {
-        ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC>
-          prims(tid, nthreads, &(reducedPeerRanks[p]), &(reducedPeerRanks[p]), thisOutput, stepSize, channel, comm);
-
-        int peerRank = reducedPeerRanks[p];
-        //if(myRank == 0) printf("tid %d:LYZ - Gather, comm with %d, size %d, loopSize %d\n",tid,peerRank, commSize, loopSize);
-        //looping
-        int halfSize = peerHalfSizes[p];
-        //if(myRank == 0) printf("tid %d:LYZ - Gather, comm with %d, --halfsize %d, loopSize %d\n",tid,peerRank, halfSize, loopSize);
-        if (myRank > peerRank) commOffset -= halfSize;
-        int loopCount = 0;
-        for (ssize_t gridOffset = commOffset; gridOffset < commOffset + halfSize; gridOffset += loopSize) {
-            //finishedSize += loopSize;
-            loopCount++;
-            ssize_t realChunkSize = min(chunkSize, DIVUP(commOffset + halfSize - gridOffset,nChannels));
-            ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-            ssize_t chunkOffset_first = gridOffset + bid*realChunkSize;
-            ssize_t chunkOffset_second = chunkOffset_first + halfSize;
-
-            /////////////// begin Butterfly steps ///////////////
-            int nelem;
-            nelem = min(realChunkSize, commOffset + halfSize - chunkOffset_first); //nelems for the first and second half are the same
-            
-            //First both send
-            if (myRank < peerRank) {
-              prims.send(thisInput+chunkOffset_first, nelem);
-            }
-            else{
-              prims.send(thisInput+chunkOffset_second, nelem);
-            }
-
-      //if(myRank == 0) printf("tid %d:LYZ - Send done - loop %d \n",tid,loopCount);
-
-            //Then both recv
-            if (myRank < peerRank) {
-              prims.recv(thisOutput+chunkOffset_second, nelem);
-        //prims.recvReduceCopy(thisInput+chunkOffset_second, thisOutput+chunkOffset_second, nelem);
-            }
-            else{
-              prims.recv(thisOutput+chunkOffset_first, nelem);
-        //prims.recvReduceCopy(thisInput+chunkOffset_first, thisOutput+chunkOffset_first, nelem);
-            }
-      //if(myRank == 0) printf("tid %d:LYZ - Recv done - loop %d \n",tid,loopCount);
+    const T *__restrict__ thisInput = (const T *)args->sendbuff;
+    T *__restrict__ thisOutput = (T *)args->recvbuff;
+    if (tid == 0) {
+      for (int p = 0; p < log2i(comm->nRanks); p++) {
+        int peer = butterfly->devPeerRanks[p];
+        if (peer != -1) {
+          printf("%d: Peer is %d\n", p, peer);
         }
       }
+    }
 
-    //finally, send to the reduced ranks
-    if (butterfly->lastoneCompressed == 1) {
-      int peerRank = butterfly->peerRanks[0];
-
-      ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC>
-          prims(tid, nthreads, &(butterfly->peerRanks[0]), &(butterfly->peerRanks[0]), thisOutput, stepSize, channel, comm);
-
+    auto edgeReduce = [&]__device__(int peer, bool scatter, int step)->void {
+      ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 0, RedOp>
+        prims(tid, nthreads, &peer, &peer, thisOutput, stepSize, channel, comm);
+      if (tid == 0)
+        printf("%d: START FOR peer %d\n", comm->rank, peer);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
         ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-        ssize_t chunkOffset = gridOffset + bid*realChunkSize;
 
-        /////////////// begin Butterfly steps ///////////////
-        ssize_t offset;
-        int nelem;
-        offset = chunkOffset;
-        nelem = min(realChunkSize, size-offset);
-        if (myRank < peerRank) {
-          //printf("0Stage 1");
-          prims.recv(thisOutput+offset, nelem);
+        ssize_t chunkOffset = gridOffset + bid * realChunkSize;
+        int nelem = min(realChunkSize, size - chunkOffset);
+        if (tid == 0) {
+          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
         }
-        else{
-          //printf("1Stage 1");
-          prims.send(thisInput+offset, nelem);
+        if ((rank < peer) ^ !scatter)
+          prims.send(thisInput+chunkOffset, nelem);
+        else if (scatter)
+          prims.recvReduceCopy(thisInput+chunkOffset, thisOutput+chunkOffset, nelem);
+        else
+          prims.recv(thisOutput+chunkOffset, nelem);
+      }
+      if (tid == 0)
+        printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
+    };
+
+    auto reduce = [&]__device__(int peer, bool scatter, int step)->void {
+      int halfSize = size >> (step + 1);
+			ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 0, RedOp>
+        prims(tid, nthreads, &peer, &peer, thisOutput, stepSize, channel, comm);
+
+      if (tid == 0)
+        printf("%d: START FOR peer %d\n", comm->rank, peer);
+      for (ssize_t gridOffset = commOffset; gridOffset < commOffset + halfSize; gridOffset += loopSize) {
+				ssize_t realChunkSize = min(chunkSize, DIVUP(commOffset+halfSize-gridOffset,nChannels));
+        ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+
+        ssize_t chunkOffset = gridOffset + bid * realChunkSize;
+        int nelem = min(realChunkSize, commOffset+halfSize - chunkOffset);
+        if (tid == 0) {
+          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
         }
+
+        prims.send(thisInput+chunkOffset+(((rank<peer)^scatter)?0:halfSize), nelem);
+        if (scatter)
+          prims.recvReduceCopy(thisInput+chunkOffset+(rank<peer?0:halfSize), thisOutput+chunkOffset+(rank<peer?0:halfSize), nelem);
+        else
+          prims.recv(thisOutput+chunkOffset+(rank<peer?halfSize:0), nelem);
+      }
+      if (tid == 0)
+        printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
+    };
+
+    int edgeRank = butterfly->edgeRank;
+    if (edgeRank != -1)
+      edgeReduce(edgeRank, true, log2i(comm->nRanks));
+
+    for (int p = 0; p < log2i(comm->nRanks); p++) {
+      int peer = butterfly->devPeerRanks[p];
+      if (peer != -1) {
+        reduce(peer, true, p);
+        if (rank > peer)
+          commOffset += size >> (p + 1);
       }
     }
-  }
-};
-
-//butterfly - lyz
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_LL, FUNC, T, UNROLL> {
-  public:
-  __device__ void run(struct CollectiveArgs* args) {
-    const int tid = threadIdx.x;
-    const int nthreads = args->coll.nThreads;
-    const int bid = args->coll.bid;
-    const int nChannels = args->coll.nChannels;
-    struct ncclDevComm* comm = args->comm;
-    struct ncclChannel* channel = comm->channels+blockIdx.x;
-    //struct ncclRing* butterfly = &channel->butterfly;
-    const int stepLines = comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS);
-    ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
-    const ssize_t minChunkSize = nthreads * (sizeof(uint64_t)) / sizeof(T);
-    //const int nranks = comm->nRanks;
-    const ssize_t loopSize = nChannels*chunkSize;
-    const ssize_t size = args->coll.count;
-
-    // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-
-
-    /////////////// begin Butterfly steps ///////////////
-    struct ncclButterfly* butterfly = &channel->butterfly;
-    int myRank = comm->rank;
-    for (int p = 0; p < butterfly->peerCount; p++) {
-        ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &(butterfly->peerRanks[p]), &(butterfly->peerRanks[p]), stepLines, channel, comm);
-
-        int peerRank = butterfly->peerRanks[p];
-        printf("LL Communicating %d <-> %d \n", myRank, peerRank);      
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-            ssize_t realChunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
-
-            /////////////// begin AllReduce steps ///////////////
-            ssize_t offset;
-            int nelem;
-
-            offset = gridOffset + bid * realChunkSize;
-            nelem = min(realChunkSize, size-offset);
-            
-            if (p==0 && butterfly->lastoneCompressed == 1) {
-              if (myRank < peerRank) {
-                LLprims.send(thisInput+offset, nelem);
-              }
-              else{
-                LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-              }
-            }
-            else if (p < butterfly->peerCount - 1 || (p == (butterfly->peerCount - 1) && butterfly->lastoneCompressed == 0)) {
-              if (myRank < peerRank) {
-                printf("I'm sending data \n");
-                LLprims.send(thisInput+offset, nelem);
-          printf("Sending done. start recving \n");
-                LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-          printf("Recving done \n");
-              }
-              else {
-                LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
-              }
-            }
-            else {
-              if (myRank < peerRank) {
-                LLprims.recv(thisOutput+offset, nelem);
-              }
-              else {
-                LLprims.send(thisOutput+offset, nelem);
-              }
-            }
-        }
+    for (int p = log2i(comm->nRanks) - 1; p >= 0; p--) {
+      int peer = butterfly->devPeerRanks[p];
+      if (peer != -1) {
+        if (rank > peer)
+          commOffset -= size >> (p + 1);
+        reduce(peer, false, p);
+      }
     }
-    printf("Kernel finished 0.\n");
 
+    if (edgeRank != -1)
+      edgeReduce(edgeRank, false, log2i(comm->nRanks) + 1);
   }
 };
+
+
+#endif

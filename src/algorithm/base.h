@@ -28,7 +28,7 @@ public:
   ncclEnqueueBase(const char *name): name(name) {}
   virtual ncclResult_t getPattern(int coll, int *pattern) const;
   virtual ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
-  virtual ncclResult_t enqueuePattern(struct ncclInfo *info) const;
+  virtual ncclResult_t enqueuePattern(struct ncclInfo *info, bool *redirect) const;
   virtual ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   virtual ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
   virtual ncclResult_t enqueueChannelThread(struct ncclInfo *info) const;

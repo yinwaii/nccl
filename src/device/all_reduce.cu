@@ -8,6 +8,8 @@
 #include "tree/all_reduce.cuh"
 #include "collnet/all_reduce.cuh"
 #include "butterfly/all_reduce.cuh"
+#include "butterfly2/all_reduce.cuh"
+#include "butterfly_yz/all_reduce.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

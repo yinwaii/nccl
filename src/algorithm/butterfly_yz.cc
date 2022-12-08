@@ -14,14 +14,14 @@ ncclResult_t ncclTopoButterfly_yz::topoPreset(struct ncclTopoRanks *topoRanks) {
   for (int c=0; c<nChannels; c++) {
 	int* butterflyIntra = graph.intra+c*localRanks;
     for (int i=0; i<localRanks; i++) {
-      //butterfly - lyz
+      //butterfly_yz - lyz
       if (butterflyIntra[i] == rank) {
         topoRanks->butterflyRecv[c] = butterflyIntra[0];
         topoRanks->butterflySend[c] = butterflyIntra[localRanks-1];
-        //channel->butterfly.prev = (i == 0) ? -1 : butterflyIntra[i-1];
-        //channel->butterfly.next = (i == localRanks-1) ? -1 : butterflyIntra[i+1];
-        //topoRanks->butterflyPrev[c] = channel->butterfly.prev;
-        //topoRanks->butterflyNext[c] = channel->butterfly.next;
+        //channel->butterfly_yz.prev = (i == 0) ? -1 : butterflyIntra[i-1];
+        //channel->butterfly_yz.next = (i == localRanks-1) ? -1 : butterflyIntra[i+1];
+        //topoRanks->butterflyPrev[c] = channel->butterfly_yz.prev;
+        //topoRanks->butterflyNext[c] = channel->butterfly_yz.next;
       }
 	}
   }
@@ -40,13 +40,13 @@ ncclResult_t ncclTopoButterfly_yz::connectButterfly(struct ncclComm* comm, int* 
     int* send = butterflySend+c*comm->nRanks;
 
     struct ncclChannel* channel = comm->channels+c;
-    channel->butterfly.peerCount = 0;
-    channel->butterfly.lastoneCompressed = 0;
-    channel->butterfly.myRank = myRank;
+    channel->butterfly_yz.peerCount = 0;
+    channel->butterfly_yz.lastoneCompressed = 0;
+    channel->butterfly_yz.myRank = myRank;
 
     //algorithm
     if (nRanks == 1) {
-      channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank;
+      channel->butterfly_yz.peerRanks[channel->butterfly_yz.peerCount++] = myRank;
       return ncclSuccess;
     }
 
@@ -59,11 +59,11 @@ ncclResult_t ncclTopoButterfly_yz::connectButterfly(struct ncclComm* comm, int* 
     int extra_ranks = nRanks - adjsize;
     if (myRank < (2 * extra_ranks)) {
       if ((myRank % 2) == 0) {
-        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank + 1;
+        channel->butterfly_yz.peerRanks[channel->butterfly_yz.peerCount++] = myRank + 1;
         newRank = -1;
       }
       else {
-        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank - 1;
+        channel->butterfly_yz.peerRanks[channel->butterfly_yz.peerCount++] = myRank - 1;
         newRank >>= 1;
       }
     }
@@ -76,25 +76,25 @@ ncclResult_t ncclTopoButterfly_yz::connectButterfly(struct ncclComm* comm, int* 
       if (newRank < 0) break;
       int newRemote = newRank ^ dist;
       int remote = (newRemote < extra_ranks)? (newRemote * 2 + 1):(newRemote + extra_ranks);
-      channel->butterfly.peerRanks[channel->butterfly.peerCount++] = remote;
+      channel->butterfly_yz.peerRanks[channel->butterfly_yz.peerCount++] = remote;
     }
 
     //deal with those compressed ranks
     if (myRank < 2 * extra_ranks) {
-      channel->butterfly.lastoneCompressed = 1;
+      channel->butterfly_yz.lastoneCompressed = 1;
       if ((myRank % 2) == 0) {
-        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank + 1;
+        channel->butterfly_yz.peerRanks[channel->butterfly_yz.peerCount++] = myRank + 1;
       }
       else {
-        channel->butterfly.peerRanks[channel->butterfly.peerCount++] = myRank - 1;
+        channel->butterfly_yz.peerRanks[channel->butterfly_yz.peerCount++] = myRank - 1;
       }
     }
 
     //char line[1024];
-    for (int p = 0; p < channel->butterfly.peerCount; p++) {
+    for (int p = 0; p < channel->butterfly_yz.peerCount; p++) {
       ///int offset = strlen(line);
-      //sprintf(line+offset, "%2d ", channel->butterfly.peerRanks[p]);
-      INFO(NCCL_INIT,"Butterfly Rank %d, communicates with : %d (%d)", myRank, channel->butterfly.peerRanks[p], channel->butterfly.peerCount);
+      //sprintf(line+offset, "%2d ", channel->butterfly_yz.peerRanks[p]);
+      INFO(NCCL_INIT,"Butterfly Rank %d, communicates with : %d (%d)", myRank, channel->butterfly_yz.peerRanks[p], channel->butterfly_yz.peerCount);
     }
     //INFO(NCCL_INIT, "Butterfly Rank %d, communicates with : %s", myRank, line);
   }
@@ -110,12 +110,12 @@ ncclResult_t ncclTopoButterfly_yz::topoPostset(int *firstRanks, struct ncclTopoR
   NCCLCHECK(ncclCalloc(&butterflySend, nranks*MAXCHANNELS));
   for (int i=0; i<nranks; i++) {
     for (int c=0; c<nChannels;c++) {
-      //butterfly - lyz
+      //butterfly_yz - lyz
       butterflyRecv[c*nranks+i] = allTopoRanks[i]->butterflyRecv[c];
       butterflySend[c*nranks+i] = allTopoRanks[i]->butterflySend[c];
     }
   }
-  //butterfly - lyz
+  //butterfly_yz - lyz
   NCCLCHECK(connectButterfly(comm, butterflyRecv, butterflySend, firstRanks));
   free(butterflyRecv);
   free(butterflySend);
@@ -123,15 +123,15 @@ ncclResult_t ncclTopoButterfly_yz::topoPostset(int *firstRanks, struct ncclTopoR
 }
 
 ncclResult_t ncclTopoButterfly_yz::transportSetup() {
-  INFO(NCCL_INIT, "Setting up butterfly connection ...");
+  INFO(NCCL_INIT, "Setting up butterfly_yz connection ...");
   for (int c=0; c<comm->nChannels; c++) {
 	struct ncclChannel* channel = comm->channels+c;
 	if (comm->nRanks == 1) continue;
-	if (channel->butterfly.lastoneCompressed == 0) {
-	  NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, channel->butterfly.peerCount, channel->butterfly.peerRanks, channel->butterfly.peerCount, channel->butterfly.peerRanks));
+	if (channel->butterfly_yz.lastoneCompressed == 0) {
+	  NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, channel->butterfly_yz.peerCount, channel->butterfly_yz.peerRanks, channel->butterfly_yz.peerCount, channel->butterfly_yz.peerRanks));
 	}
 	else {
-	  NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, channel->butterfly.peerCount - 1, channel->butterfly.peerRanks, channel->butterfly.peerCount - 1, channel->butterfly.peerRanks));
+	  NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, channel->butterfly_yz.peerCount - 1, channel->butterfly_yz.peerRanks, channel->butterfly_yz.peerCount - 1, channel->butterfly_yz.peerRanks));
 	}
 	INFO(NCCL_INIT, "Butterfly connection established!");
   }
@@ -154,13 +154,13 @@ ncclResult_t ncclEnqueueButterfly_yz::getPattern(int coll, int *pattern) const {
 
 ncclResult_t ncclEnqueueButterfly_yz::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
   int pattern = info->pattern;
-  struct ncclButterfly *butterfly = &args->channel->butterfly;
+  struct ncclButterfly_yz *butterfly_yz = &args->channel->butterfly_yz;
   int nRanks = info->comm->nRanks;
-  //butterfly - lyz
+  //butterfly_yz - lyz
   if (pattern == ncclPatternButterfly) {
-	//printf("Save proxy: butterfly\n");
-	struct ncclButterfly* butterfly = &args->channel->butterfly;
-	int myRank = butterfly->myRank;
+	//printf("Save proxy: butterfly_yz\n");
+	struct ncclButterfly_yz* butterfly_yz = &args->channel->butterfly_yz;
+	int myRank = butterfly_yz->myRank;
 	
 	// lyz - segmented - different nsteps for different peers
 	int commSize = info->nBytes;
@@ -170,10 +170,10 @@ ncclResult_t ncclEnqueueButterfly_yz::proxySaveColl(struct ncclProxyArgs *args, 
 	int reducedPeerRanks[1024];
 	int reducedPeerCount = 0;
 
-	for (int p = 0; p < butterfly->peerCount; p++) {
-	int peerRank = butterfly->peerRanks[p];
+	for (int p = 0; p < butterfly_yz->peerCount; p++) {
+	int peerRank = butterfly_yz->peerRanks[p];
 	int nsteps = 0;
-	if (p == (butterfly->peerCount - 1) && butterfly->lastoneCompressed == 1 || p == 0 && butterfly->lastoneCompressed == 1) continue;
+	if (p == (butterfly_yz->peerCount - 1) && butterfly_yz->lastoneCompressed == 1 || p == 0 && butterfly_yz->lastoneCompressed == 1) continue;
 	int halfSize = commSize/2;
 
 	/*calculate steps*/
@@ -199,9 +199,9 @@ printf("Enqueue  size: %d\n", commSize);
 	reducedPeerCount++;
 	}
 	/** Enqueue proxies **/
-	if (butterfly->lastoneCompressed == 1) {
-	  NCCLCHECK(SaveProxy<proxySend>(butterfly->peerRanks[0], args));
-	  NCCLCHECK(SaveProxy<proxyRecv>(butterfly->peerRanks[0], args));
+	if (butterfly_yz->lastoneCompressed == 1) {
+	  NCCLCHECK(SaveProxy<proxySend>(butterfly_yz->peerRanks[0], args));
+	  NCCLCHECK(SaveProxy<proxyRecv>(butterfly_yz->peerRanks[0], args));
 	}
 	for (int p = 0; p < reducedPeerCount; p++) {
 	  NCCLCHECK(SaveProxy<proxySend>(reducedPeerRanks[p], args, peerSteps[p]));
@@ -221,7 +221,7 @@ printf("Enqueue  size: %d\n", commSize);
 		adjsize <<= 1;
 	adjsize >>= 1;
 
-	int myRank = args->channel->butterfly.myRank;
+	int myRank = args->channel->butterfly_yz.myRank;
 	int myNewRank = myRank;
 
 	int rootRank = info->root;
