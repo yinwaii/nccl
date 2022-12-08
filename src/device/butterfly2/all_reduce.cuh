@@ -1,17 +1,17 @@
 
 
-#ifndef __BUTTERFLY_ALL_REDUCE_H__
-#define __BUTTERFLY_ALL_REDUCE_H__
+#ifndef __BUTTERFLY2_ALL_REDUCE_H__
+#define __BUTTERFLY2_ALL_REDUCE_H__
 #include "collectives.h"
 #include "devcomm.h"
 #include "primitives.cuh"
 
 namespace {
-  __host__ __device__ static long log2i(long n) {
-    long l = 0;
-    while (n >>= 1) l++;
-    return l;
-  }
+  // __host__ __device__ static long log2i(long n) {
+  //   long l = 0;
+  //   while (n >>= 1) l++;
+  //   return l;
+  // }
 }
 template<class RedOp, typename T, int UNROLL>
 class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY2, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
