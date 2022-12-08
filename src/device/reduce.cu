@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "reduce.cuh"
+#include "ring/reduce.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

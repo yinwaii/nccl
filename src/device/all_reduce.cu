@@ -4,7 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "all_reduce.cuh"
+#include "ring/all_reduce.cuh"
+#include "tree/all_reduce.cuh"
+#include "collnet/all_reduce.cuh"
+#include "butterfly/all_reduce.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "all_gather.cuh"
+#include "ring/all_gather.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

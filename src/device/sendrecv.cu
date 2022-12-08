@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "sendrecv.cuh"
+#include "ring/sendrecv.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

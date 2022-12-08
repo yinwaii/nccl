@@ -4,7 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "broadcast.cuh"
+#include "ring/broadcast.cuh"
+#include "butterfly/broadcast.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

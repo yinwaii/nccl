@@ -4,6 +4,9 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#ifndef NCCL_PRIMS_LL128_H_
+#define NCCL_PRIMS_LL128_H_
+
 #include "op128.cuh"
 
 #define NCCL_LL128_FLAGTHREAD (NCCL_LL128_LINEELEMS-1)
@@ -389,3 +392,5 @@ class ncclLL128Primitives {
     saveSendSync();
   }
 };
+
+#endif

@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "reduce_scatter.cuh"
+#include "ring/reduce_scatter.cuh"
 #include "common.cuh"
 #include "collectives.h"
 
