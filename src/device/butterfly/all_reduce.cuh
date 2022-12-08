@@ -90,6 +90,8 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY, NCCL_PROTO_SIMPLE, Re
         else
           prims.recv(thisOutput+chunkOffset+(rank<peer?halfSize:0), nelem);
       }
+      prims.conRecv(thisOutput, 1);
+      prims.conSend(thisInput, 1);
       if (tid == 0)
         printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
     };

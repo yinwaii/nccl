@@ -74,6 +74,10 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY2, NCCL_PROTO_SIMPLE, R
       }
       if (!forward && scatter)
         commOffset += splitOffset;
+      if (!edge) {
+        prims.conRecv(thisOutput, 1);
+        prims.conSend(thisInput, 1);
+      }
       if (tid == 0)
         printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
     };
