@@ -11,59 +11,59 @@
 
 __device__ volatile uint64_t* ncclShmem;
 
-#define NCCL_FUNC5(coll, op, dtype)                  \
-  WITH_COMMA(NCCL_COLL_NAME(coll##LL, op, dtype))    \
-  WITH_COMMA(NCCL_COLL_NAME(coll##LL128, op, dtype)) \
-  WITH_COMMA(NCCL_COLL_NAME(coll, op, dtype))
+#define NCCL_FUNC5(coll, algo, redop, type)                   \
+  WITH_COMMA(NCCL_COLL_NAME(coll, algo, LL,     redop, type)) \
+  WITH_COMMA(NCCL_COLL_NAME(coll, algo, LL128,  redop, type)) \
+  WITH_COMMA(NCCL_COLL_NAME(coll, algo, SIMPLE, redop, type))
 
-#define NCCL_FUNC5_ELE(algo, coll, op, type) \
-  NCCL_FUNC5(coll##algo, op, type)
+#define NCCL_FUNC5_ELE(algo, coll, redop, type) \
+  NCCL_FUNC5(coll, algo, redop, type)
 
-#define NCCL_FUNC4(coll, op, type) \
-  MAP_FOR_ALGOS(NCCL_FUNC5_ELE, coll, op, type)
+#define NCCL_FUNC4(coll, redop, type) \
+  MAP_FOR_ALGOS(NCCL_FUNC5_ELE, coll, redop, type)
 
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(coll, op) \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  u8)  \
-  NCCL_FUNC4(coll, op, i32)  \
-  NCCL_FUNC4(coll, op, u32)  \
-  NCCL_FUNC4(coll, op, i64)  \
-  NCCL_FUNC4(coll, op, u64)  \
-  NCCL_FUNC4(coll, op, f16)  \
-  NCCL_FUNC4(coll, op, f32)  \
-  NCCL_FUNC4(coll, op, f64)
-#define NCCL_FUNCS3B(coll, op) \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)  \
-  NCCL_FUNC4(coll, op,  i8)
+#define NCCL_FUNCS3A(coll, redop) \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, uint8_t)  \
+  NCCL_FUNC4(coll, redop, int32_t)  \
+  NCCL_FUNC4(coll, redop, uint32_t)  \
+  NCCL_FUNC4(coll, redop, int64_t)  \
+  NCCL_FUNC4(coll, redop, uint64_t)  \
+  NCCL_FUNC4(coll, redop, half)  \
+  NCCL_FUNC4(coll, redop, float)  \
+  NCCL_FUNC4(coll, redop, double)
+#define NCCL_FUNCS3B(coll, redop) \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)  \
+  NCCL_FUNC4(coll, redop, int8_t)
 
 // Must be consistent with ncclRedOp_t
 #define NCCL_FUNCS2A(coll) \
-  NCCL_FUNCS3A(coll, sum ) \
-  NCCL_FUNCS3A(coll, prod) \
-  NCCL_FUNCS3A(coll, max ) \
-  NCCL_FUNCS3A(coll, min )
+  NCCL_FUNCS3A(coll, Sum )  \
+  NCCL_FUNCS3A(coll, Prod)  \
+  NCCL_FUNCS3A(coll, Max )  \
+  NCCL_FUNCS3A(coll, Min )
 #define NCCL_FUNCS2B(coll) \
-  NCCL_FUNCS3B(coll, copy) \
-  NCCL_FUNCS3B(coll, copy) \
-  NCCL_FUNCS3B(coll, copy) \
-  NCCL_FUNCS3B(coll, copy)
+  NCCL_FUNCS3B(coll, Sum)  \
+  NCCL_FUNCS3B(coll, Sum)  \
+  NCCL_FUNCS3B(coll, Sum)  \
+  NCCL_FUNCS3B(coll, Sum)
 
 // Must be consistent with ncclFunc_t
-#define NCCL_FUNCS() { \
-  NCCL_COLL_NAME(ncclSendRecv, copy, i8)\
-  NCCL_FUNCS2B(ncclBroadcast) \
-  NCCL_FUNCS2A(ncclReduce) \
-  NCCL_FUNCS2B(ncclAllGather) \
-  NCCL_FUNCS2A(ncclReduceScatter) \
-  NCCL_FUNCS2A(ncclAllReduce) }
+#define NCCL_FUNCS()  \
+  WITH_COMMA(NCCL_COLL_NAME(SendRecv, RING, SIMPLE, Sum, int8_t))\
+  NCCL_FUNCS2B(Broadcast) \
+  NCCL_FUNCS2A(Reduce) \
+  NCCL_FUNCS2B(AllGather) \
+  NCCL_FUNCS2A(ReduceScatter) \
+  NCCL_FUNCS2A(AllReduce) 
 
 // Must be consistent with the ncclFuncSet enum
 __device__ ncclKern_t ncclFuncs[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
@@ -71,12 +71,7 @@ __device__ ncclKern_t ncclFuncs[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCC
 // variable. There is no host pointer to a device-side function, which
 // confuses clang. This will be fixed in the next clang release.
 #if __CUDA_ARCH__
-  WITH_COMMA(NCCL_COLL_NAME(ncclSendRecv, copy, i8))
-  NCCL_FUNCS2B(ncclBroadcast)
-  NCCL_FUNCS2A(ncclReduce)
-  NCCL_FUNCS2B(ncclAllGather)
-  NCCL_FUNCS2A(ncclReduceScatter)
-  NCCL_FUNCS2A(ncclAllReduce)
+  NCCL_FUNCS()
 #endif
 };
 

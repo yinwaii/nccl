@@ -8,4 +8,4 @@
 #include "common.cuh"
 #include "collectives.h"
 
-IMPL_COLL_C(ncclBroadcast, ncclCollBroadcast);
+IMPL_COLL_C(Broadcast);

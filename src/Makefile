@@ -119,7 +119,7 @@ $(OBJDIR)/%.o : %.cc $(INCTARGETS)
 	@rm -f $(@:%.o=%.d.tmp)
 
 clean :
-	$(MAKE) -C collectives/device clean
+	$(MAKE) -C device clean
 	rm -rf ${INCDIR} ${LIBDIR} ${PKGDIR} ${OBJDIR}
 
 install : lib

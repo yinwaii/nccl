@@ -3,10 +3,10 @@
 #include <stdint.h>
 
 #define MAP_FOR_ALGOS(f, ...) \
-	f(Tree, ##__VA_ARGS__) \
-	f(Ring, ##__VA_ARGS__) \
-	f(CollNet, ##__VA_ARGS__) \
-  f(Butterfly, ##__VA_ARGS__)
+	f(TREE, ##__VA_ARGS__) \
+	f(RING, ##__VA_ARGS__) \
+	f(COLLNET, ##__VA_ARGS__) \
+  f(BUTTERFLY_YZ, ##__VA_ARGS__)
 
 #define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0

@@ -8,4 +8,4 @@
 #include "common.cuh"
 #include "collectives.h"
 
-IMPL_COLL_C(ncclAllGather, ncclCollAllGather);
+IMPL_COLL_C(AllGather);

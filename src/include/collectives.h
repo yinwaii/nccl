@@ -12,56 +12,59 @@
 #define FUNC_INDEX_P2P 0
 #define FUNC_INDEX(coll, redop, dtype, al, pr) (1+(((((coll)*ncclNumOps + (redop))*ncclNumTypes) + (dtype))*NCCL_NUM_ALGORITHMS+(al))*NCCL_NUM_PROTOCOLS+(pr))
 
-#define NCCL_COLL_NAME(coll, op, dtype) \
-  coll##_##op##_##dtype
+#define NCCL_COLL_NAME(coll, algo, proto, redop, dtype) \
+  ncclFunction_##coll##_##algo##_##proto##_##redop##_##dtype
 
-#define NCCL_KERN_NAME(coll, op, dtype) \
-  coll##Kernel_##op##_##dtype
+#define NCCL_KERN_NAME(coll, algo, proto, redop, dtype) \
+  ncclKernel_##coll##_##algo##_##proto##_##redop##_##dtype
+
+#define NCCL_IMPL_NAME(coll, algo, proto) \
+  nccl##coll##algo##proto
 
 #define WITH_COMMA(content) content,
 
 /* Declare all collective operations */
-#define DECL_COLL5(coll, op, dtype) \
-  extern __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args); \
-  extern __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl c); \
+#define DECL5(coll, algo, proto, redop, dtype) \
+  extern __device__ void NCCL_COLL_NAME(coll, algo, proto, redop, dtype)(struct CollectiveArgs* args); \
+  extern __global__ void NCCL_KERN_NAME(coll, algo, proto, redop, dtype)(struct ncclColl c); \
 
-#define DECL_COLL4(coll, op, dtype) \
-  DECL_COLL5(coll, op, dtype) \
-  DECL_COLL5(coll##LL, op, dtype) \
-  DECL_COLL5(coll##LL128, op, dtype)
+#define DECL4(coll, algo, redop, dtype) \
+  DECL5(coll, algo, SIMPLE, redop, dtype) \
+  DECL5(coll, algo, LL,     redop, dtype) \
+  DECL5(coll, algo, LL128,  redop, dtype) 
 
-#define DECL4_ELE(algo, coll, op, dtype) \
-  DECL_COLL4(coll##algo, op, dtype)
+#define DECL4_ELE(algo, coll, redop, dtype) \
+  DECL4(coll, algo, redop, dtype)
 
-#define DECL_COLL3(coll, op, dtype) \
-  MAP_FOR_ALGOS(DECL4_ELE, coll, op, dtype)
+#define DECL3(coll, redop, dtype) \
+  MAP_FOR_ALGOS(DECL4_ELE, coll, redop, dtype)
 
-#define DECL_COLL2(coll, op) \
-  DECL_COLL3(coll, op, i8) \
-  DECL_COLL3(coll, op, u8) \
-  DECL_COLL3(coll, op, i32) \
-  DECL_COLL3(coll, op, u32) \
-  DECL_COLL3(coll, op, i64) \
-  DECL_COLL3(coll, op, u64) \
-  DECL_COLL3(coll, op, f16) \
-  DECL_COLL3(coll, op, f32) \
-  DECL_COLL3(coll, op, f64)
+#define DECL2(coll, redop) \
+  DECL3(coll, redop, int8_t) \
+  DECL3(coll, redop, uint8_t) \
+  DECL3(coll, redop, int32_t) \
+  DECL3(coll, redop, uint32_t) \
+  DECL3(coll, redop, int64_t) \
+  DECL3(coll, redop, uint64_t) \
+  DECL3(coll, redop, half) \
+  DECL3(coll, redop, float) \
+  DECL3(coll, redop, double)
 
-#define DECL_COLL(coll) \
-  DECL_COLL2(coll, sum) \
-  DECL_COLL2(coll, prod) \
-  DECL_COLL2(coll, min) \
-  DECL_COLL2(coll, max)
+#define DECL(coll) \
+  DECL2(coll, Sum) \
+  DECL2(coll, Prod) \
+  DECL2(coll, Min) \
+  DECL2(coll, Max)
 
-#define DECL_ALL_COLLS \
-  DECL_COLL2(ncclBroadcast, copy) \
-  DECL_COLL(ncclReduce) \
-  DECL_COLL2(ncclAllGather, copy) \
-  DECL_COLL(ncclReduceScatter) \
-  DECL_COLL(ncclAllReduce) \
-  DECL_COLL5(ncclSendRecv,copy,i8) \
+#define DECL_ALL \
+  DECL2(Broadcast, Sum) \
+  DECL(Reduce) \
+  DECL2(AllGather, Sum) \
+  DECL(ReduceScatter) \
+  DECL(AllReduce) \
+  DECL5(SendRecv, RING, SIMPLE, Sum, int8_t) \
 
-DECL_ALL_COLLS
+DECL_ALL
 
 // CHUNKSIZE must be a multiple of SLICESIZE
 #define ALLREDUCE_SLICESTEPS (NCCL_STEPS/4)

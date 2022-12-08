@@ -8,4 +8,4 @@
 #include "common.cuh"
 #include "collectives.h"
 
-IMPL_COLL_R(ncclReduce, ncclCollReduce);
+IMPL_COLL_R(Reduce);
