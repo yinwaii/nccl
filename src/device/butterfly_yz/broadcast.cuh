@@ -135,6 +135,7 @@ class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
             //prims.recv(thisOutput+offset, nelem);
             prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
         }
+        prims.conRecv(thisOutput, 1);
     }
     //Then send
     for (int p = 0; p < sendPeerCount; p++) {
@@ -164,6 +165,7 @@ class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
               //prims.send(thisInput+offset, nelem);
             }
         }
+        prims.conSend(thisInput, 1);
     }
   }
 };

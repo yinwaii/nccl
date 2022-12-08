@@ -14,7 +14,7 @@ namespace {
   }
 }
 template<class RedOp, typename T, int UNROLL>
-class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
+class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY2, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
   public:
   __device__ void run(struct CollectiveArgs* args) {
 		const int tid = threadIdx.x;

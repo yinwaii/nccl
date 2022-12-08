@@ -115,7 +115,7 @@ class ncclPrimitives {
   inline __device__ void waitRecv() {
     spins = 0;
     if (recvConnTailPtr) {
-      while (recvConnTailCache < recvConnTail + SLICESTEPS) {
+      while (recvConnTailCache + NCCL_STEPS < recvConnTail + SLICESTEPS) {
 	//printf("wait recv t:%d\n",tid);
         recvConnTailCache = *recvConnTailPtr;
         if (checkAbort(wid, 0)) break;
@@ -124,6 +124,27 @@ class ncclPrimitives {
       recvConnTail += SLICESTEPS;
     }
   }
+  
+  inline __device__ void confirmSend() {
+    spins = 0;
+    if (sendConnHeadPtr) {
+      while (sendConnHeadCache < sendConnHead) {
+        sendConnHeadCache = *sendConnHeadPtr;
+        if (checkAbort(wid, 1)) break;
+      }
+    }
+  }
+
+  inline __device__ void confirmRecv() {
+    spins = 0;
+    if (recvConnTailPtr) {
+      while (recvConnTailCache < recvConnTail) {
+        recvConnTailCache = *recvConnTailPtr;
+        if (checkAbort(wid, 0)) break;
+      }
+    }
+  }
+
 
   inline __device__ void incRecv(int i) {
     recvStep[i] += SLICESTEPS;
@@ -162,6 +183,20 @@ class ncclPrimitives {
   template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND, int SRC, int DST>
   inline __device__ void
   GenericOp(const T* srcPtr, T* dstPtr, int nelem, ssize_t directOffset) {
+    if (nelem == -1) {
+      bool syncThread = tid >= nthreads;
+      if (!syncThread) {
+        confirmSend();
+      }
+      return;
+    }
+    if (nelem == -2) {
+      bool syncThread = tid >= nthreads;
+      if (!syncThread) {
+        confirmRecv();
+      }
+      return;
+    }
     int offset = 0;
     int sliceSize = stepSize*SLICESTEPS;
     int dataSize = max(DIVUP(nelem, 16*SLICESPERCHUNK)*16, sliceSize/32);
@@ -295,6 +330,16 @@ class ncclPrimitives {
     for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
     loadRecvSync();
     loadSendSync();
+  }
+
+  __device__ __forceinline__ void
+  conSend(const T* src, int nelem) {
+    GenericOp<0, 0, 0, 1, 1, 0>(src, NULL, -1, 0);
+  }
+
+  __device__ __forceinline__ void
+  conRecv(T *dst, int nelem) {
+    GenericOp<0, 0, 1, 0, 0, 1>(NULL, dst, -2, 0);
   }
 
   __device__ __forceinline__ void

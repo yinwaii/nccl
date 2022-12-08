@@ -118,6 +118,8 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
           reducedPeerRanks[reducedPeerCount] = peerRank;
           reducedPeerCount++;
         }
+      prims.conRecv(thisOutput, 1);
+      prims.conSend(thisInput, 1);
     }
     
     ////// Gather ////
@@ -165,6 +167,8 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
             }
       //if(myRank == 0) printf("tid %d:LYZ - Recv done - loop %d \n",tid,loopCount);
         }
+        prims.conRecv(thisOutput, 1);
+        prims.conSend(thisInput, 1);
       }
 
     //finally, send to the reduced ranks
