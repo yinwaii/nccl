@@ -226,23 +226,6 @@ ncclResult_t ncclEnqueueRing::enqueueLoopInfo(struct ncclInfo *info) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueRing::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const
-{
-  switch (info->protocol) {
-    case NCCL_PROTO_SIMPLE: {
-      sliceInfo->chunkSteps = info->chunkSteps;
-      sliceInfo->sliceSteps = info->sliceSteps;
-      sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
-      break;
-    }
-    default: {
-      this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
-      break;
-    }
-  }
-  return ncclSuccess;
-}
-
 bool ncclEnqueueRing::NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) const {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
 

@@ -34,7 +34,6 @@ public:
   ncclResult_t getPattern(int coll, int *pattern) const;
   ncclResult_t tuningAlgoTime(struct ncclInfo *info, int algorithm, int protocol, float *time) const;
   ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
-  ncclResult_t enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const;
   ncclResult_t proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const;
 };
 

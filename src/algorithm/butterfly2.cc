@@ -65,8 +65,7 @@ ncclResult_t ncclEnqueueButterfly2::proxySaveColl(struct ncclProxyArgs *args,
   return ncclSuccess;
 }
 
-ncclResult_t
-ncclEnqueueButterfly2::enqueueLoopInfo(struct ncclInfo *info) const {
+ncclResult_t ncclEnqueueButterfly2::enqueueLoopInfo(struct ncclInfo *info) const {
   switch (info->pattern) {
   case ncclPatternButterfly:
     info->nchunksPerLoop = 1;
@@ -77,23 +76,4 @@ ncclEnqueueButterfly2::enqueueLoopInfo(struct ncclInfo *info) const {
     return ncclInternalError;
   }
   return ncclSuccess;
-}
-ncclResult_t ncclEnqueueButterfly2::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const
-{
-	switch (info->protocol)
-	{
-	case NCCL_PROTO_SIMPLE:
-	{
-		sliceInfo->chunkSteps = info->chunkSteps;
-		sliceInfo->sliceSteps = info->sliceSteps;
-		sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
-		break;
-	}
-	default:
-	{
-		this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
-		break;
-	}
-	}
-	return ncclSuccess;
 }

@@ -280,6 +280,10 @@ ncclResult_t ncclEnqueueCollNet::enqueueLoopInfo(struct ncclInfo *info) const {
 }
 
 ncclResult_t ncclEnqueueCollNet::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const {
+  sliceInfo->chunkSteps = 1;
+  sliceInfo->sliceSteps = 1;
+  sliceInfo->chunkSize = sliceInfo->stepSize * sliceInfo->chunkSteps;
+  this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
   switch (info->protocol) {
     case NCCL_PROTO_SIMPLE: {
       // Optimize chunkSize / nSteps
@@ -288,10 +292,6 @@ ncclResult_t ncclEnqueueCollNet::enqueueSlice(struct ncclInfo *info, struct nccl
       while (info->nBytes / (info->nChannels*sliceInfo->chunkSize) < info->comm->channels[0].collTreeUp.depth && sliceInfo->chunkSize > 32768) sliceInfo->chunkSize /= 2;
       // Use lastChunkSize as chunkSize
       coll->args.coll.lastChunkSize = sliceInfo->chunkSize / ncclTypeSize(info->datatype);
-      break;
-    }
-    default: {
-      this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
       break;
     }
   }
