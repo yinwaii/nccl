@@ -342,7 +342,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     void* mhandle = *(resources->mhandlesProto[p]);
     if (args->head < args->end) {
       volatile uint64_t* sendHead = &resources->sendMem->head;
-      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + 0) && (args->tail < args->end)) {
+      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
         int sliceSize = stepSize * args->sliceSteps;
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));

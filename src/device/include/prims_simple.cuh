@@ -86,7 +86,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
   inline __device__ void waitRecv() {
     spins = 0;
     if (recvConnTailPtr) {
-      while (recvConnTailCache + NCCL_STEPS < recvConnTail + StepPerSlice) {
+      while (recvConnTailCache < recvConnTail + StepPerSlice) {
 	//printf("wait recv t:%d\n",tid);
         recvConnTailCache = *recvConnTailPtr;
         if (checkAbort(wid, 0)) break;
