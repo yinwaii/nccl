@@ -290,6 +290,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   coll->args.sendbuff = info->sendbuff;
   coll->args.recvbuff = info->recvbuff;
   coll->args.comm = info->comm->devComm;
+  info->nSubChannels = 1;
 
   if (info->coll == ncclCollSendRecv) {
     coll->args.p2p.sendCount = info->sendbytes;
@@ -306,7 +307,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   while (redirect) {
     NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info, &redirect));
   }
-  info->nSubChannels = 1;
   NCCLCHECK(ncclAlgos[info->algorithm]->enqueueLoopInfo(info));
 
   coll->args.coll.root = info->root;
