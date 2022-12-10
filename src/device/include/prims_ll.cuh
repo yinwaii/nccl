@@ -7,9 +7,11 @@
 #ifndef NCCL_PRIMS_LL_H_
 #define NCCL_PRIMS_LL_H_
 
-template <typename T, class FUNC, int NRECV, int NSEND>
-class ncclLLPrimitives {
+template<typename T, typename RedOp, typename Fan, int Direct>
+class Primitives<T, RedOp, Fan, Direct, ProtoLL>:
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL>, T> {
  private:
+  static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   const int tid;
   const int nthreads;
   const int wid;
@@ -26,10 +28,10 @@ class ncclLLPrimitives {
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
 
-  uint64_t recvStep[NRECV];
-  uint64_t sendStep[NSEND];
-  union ncclLLFifoLine* recvBuff[NRECV];
-  union ncclLLFifoLine* sendBuff[NSEND];
+  uint64_t recvStep[MaxRecv];
+  uint64_t sendStep[MaxSend];
+  union ncclLLFifoLine* recvBuff[MaxRecv];
+  union ncclLLFifoLine* sendBuff[MaxSend];
   struct ncclDevComm* comm;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepLines; }
@@ -133,15 +135,15 @@ class ncclLLPrimitives {
       // Recv : local, then intra-node, then inter-node
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
-        if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
-        for (int i=1; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(readLL(i, offset), val);
+        if (SRC) val = MULTI<RedOp, T>()(readLL(0, offset), val);
+        for (int i=1; i<MaxRecv && i<nrecv; i++) {
+          val = MULTI<RedOp, T>()(readLL(i, offset), val);
         }
       }
 
       // Send : inter-node, then intra-node, then local
       if (SEND) {
-        for (int i=1; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
+        for (int i=1; i<MaxSend && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
         storeLL(sendPtr(0)+offset, val, sendFlag(0));
       }
       if (DST) {
@@ -201,13 +203,13 @@ class ncclLLPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclLLPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepLines, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(stepLines) {
+  Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuffs, struct ncclChannel* channel, struct ncclDevComm* comm)
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS)) {
     // Make sure step is updated before we read it.
     barrier();
 
-    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
-    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
+    for (int i=0; i<MaxRecv && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
+    for (int i=0; i<MaxSend && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
     loadRecvSync();
     loadSendSync();
   }
@@ -240,7 +242,7 @@ class ncclLLPrimitives {
     return LLGenericOp<1, 1, 1, 1>(src, dst, nelem);
   }
 
-  __device__ __forceinline__ ~ncclLLPrimitives() {
+  __device__ __forceinline__ ~Primitives() {
     // Save steps for the next operation
     saveRecvSync();
     saveSendSync();

@@ -73,8 +73,8 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 #include <unistd.h>
 
 // Spin wait until func evaluates to true
-template<typename FUNC>
-inline void transportProxyWait(const FUNC& func) {
+template<typename RedOp>
+inline void transportProxyWait(const RedOp& func) {
   while (!func()) {
     sched_yield();
   }

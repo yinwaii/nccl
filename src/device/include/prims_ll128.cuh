@@ -11,9 +11,12 @@
 
 #define NCCL_LL128_FLAGTHREAD (NCCL_LL128_LINEELEMS-1)
 
-template <typename T, class FUNC, int NRECV, int NSEND>
-class ncclLL128Primitives {
+template<typename T, typename RedOp, typename Fan, int Direct>
+class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL128>, T> {
+
  private:
+  static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   const int tid;
   const int nthreads;
   const int wid;
@@ -34,10 +37,10 @@ class ncclLL128Primitives {
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
 
-  uint64_t recvStep[NRECV];
-  uint64_t sendStep[NSEND];
-  uint64_t* recvBuff[NRECV];
-  uint64_t* sendBuff[NSEND];
+  uint64_t recvStep[MaxRecv];
+  uint64_t sendStep[MaxSend];
+  uint64_t* recvBuff[MaxRecv];
+  uint64_t* sendBuff[MaxSend];
   struct ncclDevComm* comm;
 
   volatile uint64_t* shmem;
@@ -50,7 +53,7 @@ class ncclLL128Primitives {
   inline __device__ uint64_t sendFlag(int i) { return sendStep[i]+1; }
 
   inline __device__ void barrier() {
-    if (NSEND>NRECV) {
+    if (MaxSend>MaxRecv) {
       asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
     } else {
       asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
@@ -185,11 +188,11 @@ class ncclLL128Primitives {
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         load128(ptr+u*WARP_SIZE, v0, v1);
-        v[u] = SRC ? MULTI<FUNC, T>()(v0, v[u]) : v0;
-        v[u+1] = SRC ? MULTI<FUNC, T>()(v1, v[u+1]) : v1;
+        v[u] = SRC ? MULTI<RedOp, T>()(v0, v[u]) : v0;
+        v[u+1] = SRC ? MULTI<RedOp, T>()(v1, v[u+1]) : v1;
       }
 
-      for (int i=1; i<NRECV && i<nrecv; i++) {
+      for (int i=1; i<MaxRecv && i<nrecv; i++) {
         uint64_t flag = recvFlag(i);
         uint64_t* ptr = recvPtr(i)+ll128Offset;
         uint64_t v0, v1;
@@ -204,8 +207,8 @@ class ncclLL128Primitives {
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           load128(ptr+u*WARP_SIZE, v0, v1);
-          v[u] = MULTI<FUNC, T>()(v0, v[u]);
-          v[u+1] = MULTI<FUNC, T>()(v1, v[u+1]);
+          v[u] = MULTI<RedOp, T>()(v0, v[u]);
+          v[u+1] = MULTI<RedOp, T>()(v1, v[u+1]);
         }
       }
     }
@@ -213,7 +216,7 @@ class ncclLL128Primitives {
 
     /************************ Send **************************/
     if (SEND) {
-      for (int i=1; i<NSEND && i<nsend; i++) {
+      for (int i=1; i<MaxSend && i<nsend; i++) {
         int flag = sendFlag(i);
         uint64_t* ptr = sendPtr(i)+ll128Offset;
         #pragma unroll
@@ -347,13 +350,13 @@ class ncclLL128Primitives {
 
  public:
   __device__ __forceinline__
-  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+  Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, struct ncclChannel* channel, struct ncclDevComm* comm)
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(comm->buffSizes[NCCL_PROTO_LL128] / (sizeof(uint64_t)*NCCL_STEPS)), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 
-    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
-    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
+    for (int i=0; i<MaxRecv && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
+    for (int i=0; i<MaxSend && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
     loadRecvSync();
     loadSendSync();
   }
@@ -386,7 +389,7 @@ class ncclLL128Primitives {
     return GenericOp<1, 1, 1, 1>(src, dst, nelem);
   }
 
-  __device__ __forceinline__ ~ncclLL128Primitives() {
+  __device__ __forceinline__ ~Primitives() {
     // Save steps for the next operation
     saveRecvSync();
     saveSendSync();

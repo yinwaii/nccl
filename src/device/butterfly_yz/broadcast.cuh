@@ -9,15 +9,15 @@
 #include "collectives.h"
 
 //butterfly_yz - lyz
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
   public:
     __device__ void run(struct CollectiveArgs* args) {
     //printf("Launching kernel ---!!--- \n");
 
 
     const int tid = threadIdx.x;
-    const int nthreads = args->coll.nThreads-WARP_SIZE;
+    const int nthreads = args->coll.nThreads - WARP_SIZE;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
@@ -118,8 +118,8 @@ class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     /**Start comm**/
     //First Recv 
     if (recvPeerRank != -1) {
-        ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T, 1, 1, 0, FUNC>
-          prims(tid, nthreads, &(recvPeerRank), &(recvPeerRank), thisOutput, stepSize, channel, comm);
+        Primitives<T, RedOp, FanSymmetric<1>, 0, ProtoSimple<BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, UNROLL>>
+          prims(tid, nthreads, &(recvPeerRank), &(recvPeerRank), thisOutput, channel, comm);
 
         //printf("Recving1 from %d \n",recvPeerRank);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -139,8 +139,8 @@ class ncclFunction<ncclCollBroadcast, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     }
     //Then send
     for (int p = 0; p < sendPeerCount; p++) {
-        ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T, 1, 1, 0, FUNC>
-          prims(tid, nthreads, &(sendPeerRanks[p]), &(sendPeerRanks[p]), thisOutput, stepSize, channel, comm);
+        Primitives<T, RedOp, FanSymmetric<1>, 0, ProtoSimple<BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, UNROLL>>
+          prims(tid, nthreads, &(sendPeerRanks[p]), &(sendPeerRanks[p]), thisOutput, channel, comm);
 
         //printf("Sending1 to %d \n",sendPeerRanks[p]);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {

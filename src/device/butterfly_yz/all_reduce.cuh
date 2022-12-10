@@ -9,8 +9,8 @@
 #include "collectives.h"
 
 //segmented butterfly_yz - lyz
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+template<class RedOp, typename T, int UNROLL>
+class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE, RedOp, T, UNROLL> {
   public:
   __device__ void run(struct CollectiveArgs* args) {
     const int tid = threadIdx.x;
@@ -43,11 +43,12 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     int commSize = size;
     struct ncclButterfly_yz* butterfly_yz = &channel->butterfly_yz;
     int myRank = comm->rank;
+    using Proto = ProtoSimple<ALLREDUCE_CHUNKSTEPS / ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, UNROLL>;
 
     ////// Scatter ////
     for (int p = 0; p < butterfly_yz->peerCount; p++) {
-        ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC>
-          prims(tid, nthreads, &(butterfly_yz->peerRanks[p]), &(butterfly_yz->peerRanks[p]), thisOutput, stepSize, channel, comm);
+        Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, Proto>
+          prims(tid, nthreads, &(butterfly_yz->peerRanks[p]), &(butterfly_yz->peerRanks[p]), thisOutput, channel, comm);
 
         int peerRank = butterfly_yz->peerRanks[p];
 
@@ -124,8 +125,8 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     
     ////// Gather ////
     for (int p = reducedPeerCount -1 ; p >= 0; p--) {
-        ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC>
-          prims(tid, nthreads, &(reducedPeerRanks[p]), &(reducedPeerRanks[p]), thisOutput, stepSize, channel, comm);
+        Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, Proto>
+          prims(tid, nthreads, &(reducedPeerRanks[p]), &(reducedPeerRanks[p]), thisOutput, channel, comm);
 
         int peerRank = reducedPeerRanks[p];
         //if(myRank == 0) printf("tid %d:LYZ - Gather, comm with %d, size %d, loopSize %d\n",tid,peerRank, commSize, loopSize);
@@ -175,8 +176,8 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
     if (butterfly_yz->lastoneCompressed == 1) {
       int peerRank = butterfly_yz->peerRanks[0];
 
-      ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC>
-          prims(tid, nthreads, &(butterfly_yz->peerRanks[0]), &(butterfly_yz->peerRanks[0]), thisOutput, stepSize, channel, comm);
+      Primitives<T, RedOp, FanAsymmetric<1, 1>, 1, Proto>
+          prims(tid, nthreads, &(butterfly_yz->peerRanks[0]), &(butterfly_yz->peerRanks[0]), thisOutput, channel, comm);
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
@@ -198,83 +199,5 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
         }
       }
     }
-  }
-};
-
-//butterfly_yz - lyz
-template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_LL, FUNC, T, UNROLL> {
-  public:
-  __device__ void run(struct CollectiveArgs* args) {
-    const int tid = threadIdx.x;
-    const int nthreads = args->coll.nThreads;
-    const int bid = args->coll.bid;
-    const int nChannels = args->coll.nChannels;
-    struct ncclDevComm* comm = args->comm;
-    struct ncclChannel* channel = comm->channels+blockIdx.x;
-    //struct ncclRing* butterfly_yz = &channel->butterfly_yz;
-    const int stepLines = comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS);
-    ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
-    const ssize_t minChunkSize = nthreads * (sizeof(uint64_t)) / sizeof(T);
-    //const int nranks = comm->nRanks;
-    const ssize_t loopSize = nChannels*chunkSize;
-    const ssize_t size = args->coll.count;
-
-    // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-
-
-    /////////////// begin Butterfly steps ///////////////
-    struct ncclButterfly_yz* butterfly_yz = &channel->butterfly_yz;
-    int myRank = comm->rank;
-    for (int p = 0; p < butterfly_yz->peerCount; p++) {
-        ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &(butterfly_yz->peerRanks[p]), &(butterfly_yz->peerRanks[p]), stepLines, channel, comm);
-
-        int peerRank = butterfly_yz->peerRanks[p];
-        printf("LL Communicating %d <-> %d \n", myRank, peerRank);      
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-            ssize_t realChunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
-
-            /////////////// begin AllReduce steps ///////////////
-            ssize_t offset;
-            int nelem;
-
-            offset = gridOffset + bid * realChunkSize;
-            nelem = min(realChunkSize, size-offset);
-            
-            if (p==0 && butterfly_yz->lastoneCompressed == 1) {
-              if (myRank < peerRank) {
-                LLprims.send(thisInput+offset, nelem);
-              }
-              else{
-                LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-              }
-            }
-            else if (p < butterfly_yz->peerCount - 1 || (p == (butterfly_yz->peerCount - 1) && butterfly_yz->lastoneCompressed == 0)) {
-              if (myRank < peerRank) {
-                printf("I'm sending data \n");
-                LLprims.send(thisInput+offset, nelem);
-          printf("Sending done. start recving \n");
-                LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-          printf("Recving done \n");
-              }
-              else {
-                LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
-              }
-            }
-            else {
-              if (myRank < peerRank) {
-                LLprims.recv(thisOutput+offset, nelem);
-              }
-              else {
-                LLprims.send(thisOutput+offset, nelem);
-              }
-            }
-        }
-    }
-    printf("Kernel finished 0.\n");
-
   }
 };
