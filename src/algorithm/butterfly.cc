@@ -25,10 +25,7 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
   return ncclSuccess;
 }
 
-ncclResult_t
-ncclTopoButterfly::topoPostset(int *firstRanks,
-                               struct ncclTopoRanks **allTopoRanks) {
-
+ncclResult_t ncclTopoButterfly::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
   return ncclSuccess;
 }
 
@@ -75,8 +72,7 @@ ncclResult_t ncclEnqueueButterfly::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueButterfly::enqueuePattern(struct ncclInfo *info,
-                                                  bool *redirect) const {
+ncclResult_t ncclEnqueueButterfly::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
   if (info->coll == ncclCollBroadcast) {
     info->algorithm = NCCL_ALGO_RING;
     *redirect = true;
@@ -84,25 +80,6 @@ ncclResult_t ncclEnqueueButterfly::enqueuePattern(struct ncclInfo *info,
   }
   NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
-}
-
-int ncclEnqueueButterfly::getNsteps(struct ncclProxyArgs *args,
-                                    struct ncclInfo *info, size_t size) const {
-  // Compute nSteps for proxies
-  int stepSize = info->comm->buffSizes[info->protocol] / NCCL_STEPS;
-  int chunkEffectiveSize = stepSize * args->chunkSteps;
-  if (info->protocol == NCCL_PROTO_LL)
-    chunkEffectiveSize /= 2;
-  if (info->protocol == NCCL_PROTO_LL128)
-    chunkEffectiveSize =
-        (chunkEffectiveSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
-  // if (info->comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d
-  // (algo %d proto%d)\n", info->coll, info->nBytes, info->nChannels,
-  // info->nThreads, chunkSize, info->algorithm, info->protocol);
-  int nLoops =
-      2 * (int)(DIVUP(size / 2, (((size_t)(info->nChannels)) *
-                                 info->nchunksPerLoop * chunkEffectiveSize)));
-  return info->nstepsPerLoop * nLoops * args->chunkSteps;
 }
 
 ncclResult_t ncclEnqueueButterfly::proxySaveColl(struct ncclProxyArgs *args,
@@ -118,9 +95,8 @@ ncclResult_t ncclEnqueueButterfly::proxySaveColl(struct ncclProxyArgs *args,
     }
     for (int i = 0; i < log2i(nRanks); i++) {
       int peer = butterfly->peerRanks[i];
-      int nsteps = getNsteps(args, info, (info->nBytes >> i));
-      NCCLCHECK(SaveProxy<proxySend>(peer, args, nsteps));
-      NCCLCHECK(SaveProxy<proxyRecv>(peer, args, nsteps));
+      NCCLCHECK(SaveProxy<proxySend>(peer, args));
+      NCCLCHECK(SaveProxy<proxyRecv>(peer, args));
     }
   }
   return ncclSuccess;
