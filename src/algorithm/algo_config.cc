@@ -7,8 +7,6 @@ AlgoInfo<ncclTopoAlgo> ncclTopoAlgos(struct ncclComm *comm) {
   topoAlgos[NCCL_ALGO_COLLNET] = std::make_shared<ncclTopoCollNet>(comm);
   topoAlgos[NCCL_ALGO_BUTTERFLY] = std::make_shared<ncclTopoButterfly>(comm);
   topoAlgos[NCCL_ALGO_BUTTERFLY2] = std::make_shared<ncclTopoButterfly2>(comm);
-  topoAlgos[NCCL_ALGO_BUTTERFLY_YZ] =
-      std::make_shared<ncclTopoButterfly_yz>(comm);
   return topoAlgos;
 }
 
@@ -25,8 +23,6 @@ ncclResult_t ncclTopoInit(const AlgoInfo<ncclTopoAlgo> &algos) {
       NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
   NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY2]->graphInit(
       NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
-  NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY_YZ]->graphInit(
-      NCCL_TOPO_PATTERN_BUTTERFLY, 1, MAXCHANNELS));
   return ncclSuccess;
 }
 
@@ -43,9 +39,6 @@ AlgoInfo<ncclTuningAlgo> ncclTuningAlgos(struct ncclComm *comm,
       comm, topoAlgos[NCCL_ALGO_BUTTERFLY]);
   tuningAlgos[NCCL_ALGO_BUTTERFLY2] = std::make_shared<ncclTuningButterfly2>(
       comm, topoAlgos[NCCL_ALGO_BUTTERFLY2]);
-  tuningAlgos[NCCL_ALGO_BUTTERFLY_YZ] =
-      std::make_shared<ncclTuningButterfly_yz>(
-          comm, topoAlgos[NCCL_ALGO_BUTTERFLY_YZ]);
   return tuningAlgos;
 }
 
@@ -57,11 +50,9 @@ AlgoInfo<ncclEnqueueAlgo> ncclEnqueueAlgos() {
   enqueueAlgos[NCCL_ALGO_BUTTERFLY] = std::make_unique<ncclEnqueueButterfly>();
   enqueueAlgos[NCCL_ALGO_BUTTERFLY2] =
       std::make_unique<ncclEnqueueButterfly2>();
-  enqueueAlgos[NCCL_ALGO_BUTTERFLY_YZ] =
-      std::make_unique<ncclEnqueueButterfly_yz>();
   return enqueueAlgos;
 }
 
 AlgoInfo<ncclEnqueueAlgo> ncclAlgos = ncclEnqueueAlgos();
 const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS] = {
-    "Tree", "Ring", "CollNet", "Butterfly", "Butterfly2", "Butterfly_yz"};
+    "Tree", "Ring", "CollNet", "Butterfly", "Butterfly2"};
