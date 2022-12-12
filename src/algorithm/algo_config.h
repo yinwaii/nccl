@@ -5,11 +5,9 @@
 #define MAP_FOR_ALGOS(f, ...) \
 	f(TREE, ##__VA_ARGS__) \
 	f(RING, ##__VA_ARGS__) \
-	f(COLLNET, ##__VA_ARGS__) \
-  f(BUTTERFLY, ##__VA_ARGS__) \
-  f(BUTTERFLY2, ##__VA_ARGS__) 
+	f(COLLNET, ##__VA_ARGS__) 
 
-#define NCCL_NUM_ALGORITHMS 5 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
