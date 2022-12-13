@@ -3,18 +3,15 @@
 #include <stdint.h>
 
 #define MAP_FOR_ALGOS(f, ...) \
-	f(TREE, ##__VA_ARGS__) \
 	f(RING, ##__VA_ARGS__) \
-	f(COLLNET, ##__VA_ARGS__) \
-  f(BUTTERFLY, ##__VA_ARGS__) \
   f(BUTTERFLY2, ##__VA_ARGS__) 
 
-#define NCCL_NUM_ALGORITHMS 5 // Tree/Ring/CollNet
-#define NCCL_ALGO_TREE 0
-#define NCCL_ALGO_RING 1
+#define NCCL_NUM_ALGORITHMS 2 // Tree/Ring/CollNet
+#define NCCL_ALGO_TREE 4
+#define NCCL_ALGO_RING 0
 #define NCCL_ALGO_COLLNET 2
 #define NCCL_ALGO_BUTTERFLY 3
-#define NCCL_ALGO_BUTTERFLY2 4
+#define NCCL_ALGO_BUTTERFLY2 1
 #define NCCL_ALGO_BUTTERFLY_YZ 5
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
