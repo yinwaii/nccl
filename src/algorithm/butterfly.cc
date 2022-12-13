@@ -38,11 +38,6 @@ ncclResult_t ncclTopoButterfly::transportSetup() {
     int edgePeer = channel->butterfly.edgeRank;
     sprintf(line + strlen(line), "Channel %d: edgeRanks %d\n", c,
             channel->butterfly.edgeRank);
-    for (int r = 0; r < comm->nRanks; r++) {
-      int res = ncclTransportP2pSetup(comm, &graph, channel, 1, &r, 1, &r);
-      if (res != 0)
-        WARN("Fail to connect %d with %d...", comm->rank, r);
-    }
     if (edgePeer != -1)
       NCCLCHECK(ncclTransportP2pSetup(comm, &graph, channel, 1, &edgePeer, 1, &edgePeer));
 
