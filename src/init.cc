@@ -582,7 +582,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    NCCLCHECKGOTO(algos[a]->transportSetup(), ret, affinity_restore);
+    if (comm->algoEnable[a])
+      NCCLCHECKGOTO(algos[a]->transportSetup(), ret, affinity_restore);
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);

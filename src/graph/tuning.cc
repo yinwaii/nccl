@@ -57,9 +57,8 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS];
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
-    algoEnable[a] = 1;
+    comm->algoEnable[a] = 1;
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) {
@@ -69,24 +68,24 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
   const char *algoStr = getenv("NCCL_ALGO");
   if (algoStr) {
     INFO(NCCL_ENV, "NCCL_ALGO set by environment to %s", algoStr);
-    NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
+    NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, comm->algoEnable));
   }
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
     bool onlyCollnet = true;
     for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-      if (algoEnable[a] != 0 && a != NCCL_ALGO_COLLNET) {
+      if (comm->algoEnable[a] != 0 && a != NCCL_ALGO_COLLNET) {
         onlyCollnet = false;
         break;
       }
     }
     if (onlyCollnet) {
       for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
-        algoEnable[a] = 1;
+        comm->algoEnable[a] = 1;
       if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
     }
-    algoEnable[NCCL_ALGO_COLLNET] = 0;
+    comm->algoEnable[NCCL_ALGO_COLLNET] = 0;
   }
 
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -98,7 +97,7 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
     }
     if (pEnable == 0) comm->tuning[a].bandwidths[c][p] = 0;
     // Only disable algo for Allreduce since others only have one
-    if (algoEnable[a] == 0) comm->tuning[a].bandwidths[c][p] = 0;
+    if (comm->algoEnable[a] == 0) comm->tuning[a].bandwidths[c][p] = 0;
   }
 
   return ncclSuccess;
