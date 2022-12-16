@@ -31,7 +31,7 @@ static ncclResult_t ncclNetCloseRecv(void* recvComm) { NCCLCHECK(ncclNet->closeR
 static ncclResult_t ncclNetCloseListen(void* listenComm) { NCCLCHECK(ncclNet->closeListen(listenComm)); return ncclSuccess; }
 
 // Test whether the current GPU support GPU Direct RDMA.
-#define GPU_BUF_SIZE (40*1024*1024)
+#define GPU_BUF_SIZE (64*1024*1024)
 static ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
   int netDevs;
   NCCLCHECK(ncclNetDevices(&netDevs));
