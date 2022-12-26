@@ -10,6 +10,7 @@
 #include "butterfly/all_reduce.cuh"
 #include "butterfly2/all_reduce.cuh"
 #include "butterfly_yz/all_reduce.cuh"
+#include "mesh_cross/all_reduce.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

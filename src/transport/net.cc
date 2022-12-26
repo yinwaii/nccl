@@ -234,6 +234,10 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     void* mhandle = *(resources->mhandlesProto[p]);
     args->idle = 1;
     if (args->head < args->end) {
+            static int cnt = 0;
+      cnt++;
+      if (cnt % 1000000 == 0)
+        printf("send: head %ld end %ld delta %ld\n", args->head, args->end, args->end - args->head);
       int buffSlot = args->tail%NCCL_STEPS;
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
@@ -341,6 +345,10 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     char* localBuff = args->connector->conn.buffs[p];
     void* mhandle = *(resources->mhandlesProto[p]);
     if (args->head < args->end) {
+      static int cnt = 0;
+      cnt++;
+      if (cnt % 100000 == 0)
+        printf("recv: head %ld end %ld delta %ld\n", args->head, args->end, args->end - args->head);
       volatile uint64_t* sendHead = &resources->sendMem->head;
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;

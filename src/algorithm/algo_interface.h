@@ -7,6 +7,7 @@
 #include "butterfly_yz.h"
 #include "butterfly.h"
 #include "butterfly2.h"
+#include "mesh_cross.h"
 #include "comm.h"
 #include "../graph/topo.h"
 #include "../graph/tuning.h"
