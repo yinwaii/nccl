@@ -95,19 +95,19 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
             
             //First both send
             if (myRank < peerRank) {
-              prims.send(thisInput+chunkOffset_second, nelem);
+              prims.send((p == 0 ? thisInput : thisOutput)+chunkOffset_second, nelem);
             }
             else{
-              prims.send(thisInput+chunkOffset_first, nelem);
+              prims.send((p == 0 ? thisInput : thisOutput)+chunkOffset_first, nelem);
             }
 
             //if(myRank == 0) printf("tid %d:LYZ - 1Send done - loop %d \n",tid,loopCount);
             //Then both recv
             if (myRank < peerRank) {
-              prims.recvReduceCopy(thisInput+chunkOffset_first, thisOutput+chunkOffset_first, nelem);
+              prims.recvReduceCopy((p == 0 ? thisInput : thisOutput)+chunkOffset_first, thisOutput+chunkOffset_first, nelem);
             }
             else{
-              prims.recvReduceCopy(thisInput+chunkOffset_second, thisOutput+chunkOffset_second, nelem);
+              prims.recvReduceCopy((p == 0 ? thisInput : thisOutput)+chunkOffset_second, thisOutput+chunkOffset_second, nelem);
             }
       //if(myRank == 0) printf("tid %d:LYZ - 1Recv done - loop %d \n",tid,loopCount);
           }
@@ -149,10 +149,10 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
             
             //First both send
             if (myRank < peerRank) {
-              prims.send(thisInput+chunkOffset_first, nelem);
+              prims.send(thisOutput+chunkOffset_first, nelem);
             }
             else{
-              prims.send(thisInput+chunkOffset_second, nelem);
+              prims.send(thisOutput+chunkOffset_second, nelem);
             }
 
       //if(myRank == 0) printf("tid %d:LYZ - Send done - loop %d \n",tid,loopCount);
@@ -195,7 +195,7 @@ class ncclFunction<ncclCollAllReduce, NCCL_ALGO_BUTTERFLY_YZ, NCCL_PROTO_SIMPLE,
         }
         else{
           //printf("1Stage 1");
-          prims.send(thisInput+offset, nelem);
+          prims.send(thisOutput+offset, nelem);
         }
       }
     }

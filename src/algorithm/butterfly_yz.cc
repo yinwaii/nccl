@@ -346,23 +346,3 @@ ncclResult_t ncclEnqueueButterfly_yz::enqueueLoopInfo(struct ncclInfo *info) con
   }
   return ncclSuccess;
 }
-
-ncclResult_t ncclEnqueueButterfly_yz::enqueueSlice(struct ncclInfo *info, struct ncclSliceInfo *sliceInfo, struct ncclColl *coll) const
-{
-	switch (info->protocol)
-	{
-	case NCCL_PROTO_SIMPLE:
-	{
-		sliceInfo->chunkSteps = info->chunkSteps;
-		sliceInfo->sliceSteps = info->sliceSteps;
-		sliceInfo->chunkSize = sliceInfo->chunkSteps * sliceInfo->chunkSize;
-		break;
-	}
-	default:
-	{
-		this->ncclEnqueueBase::enqueueSlice(info, sliceInfo, coll);
-		break;
-	}
-	}
-	return ncclSuccess;
-}
