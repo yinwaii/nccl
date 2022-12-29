@@ -87,7 +87,7 @@ ncclResult_t ncclEnqueueMeshCross::getPattern(int coll, int *pattern) const {
 
 ncclResult_t ncclEnqueueMeshCross::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
   if (info->coll == ncclCollBroadcast) {
-    info->algorithm = NCCL_ALGO_RING;
+    info->algorithm = NCCL_ALGO_BUTTERFLY_YZ;
     *redirect = true;
     return ncclSuccess;
   }
@@ -116,16 +116,14 @@ ncclResult_t ncclEnqueueMeshCross::proxySaveColl(struct ncclProxyArgs *args, str
   int nRanks = info->comm->nRanks;
   if (pattern == ncclPatternMeshCross) {
     int nInterSteps = getNsteps(args, info, 2 * (info->comm->nPartitions - 1));
-    // int nIntraSteps = args->nsteps;
+    int nIntraSteps = args->nsteps;
     // printf("nInterSteps is %ld\n", nInterSteps);
-    // if (meshCross->nInterRanks != meshCross->nIntraRanks && nInterSteps > 0) {
-    //   NCCLCHECK(SaveProxy<proxyRecv>(meshCross->inter_prev, args, nInterSteps));
-    //   NCCLCHECK(SaveProxy<proxySend>(meshCross->inter_next, args, nInterSteps));
-    // }
-    // NCCLCHECK(SaveProxy<proxyRecv>(meshCross->intra_prev, args, nIntraSteps + (meshCross->nInterRanks == meshCross->nIntraRanks ? nInterSteps : 0)));
-    // NCCLCHECK(SaveProxy<proxySend>(meshCross->intra_next, args, nIntraSteps + (meshCross->nInterRanks == meshCross->nIntraRanks ? nInterSteps : 0)));
-    NCCLCHECK(SaveProxy<proxyRecv>(meshCross->intra_prev, args));
-    NCCLCHECK(SaveProxy<proxySend>(meshCross->intra_next, args));
+    if (meshCross->nInterRanks != meshCross->nIntraRanks && nInterSteps > 0) {
+      NCCLCHECK(SaveProxy<proxyRecv>(meshCross->inter_prev, args, nInterSteps));
+      NCCLCHECK(SaveProxy<proxySend>(meshCross->inter_next, args, nInterSteps));
+    }
+    NCCLCHECK(SaveProxy<proxyRecv>(meshCross->intra_prev, args, nIntraSteps + (meshCross->nInterRanks == meshCross->nIntraRanks ? nInterSteps : 0)));
+    NCCLCHECK(SaveProxy<proxySend>(meshCross->intra_next, args, nIntraSteps + (meshCross->nInterRanks == meshCross->nIntraRanks ? nInterSteps : 0)));
     if (info->comm->rank != meshCross->mirror) {
       int nSteps = getNsteps(args, info, 2 * info->comm->nPartitions);
       NCCLCHECK(SaveProxy<proxySend>(meshCross->mirror, args, nSteps));

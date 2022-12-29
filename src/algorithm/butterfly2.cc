@@ -16,7 +16,7 @@ ncclResult_t ncclEnqueueButterfly2::getPattern(int coll, int *pattern) const {
 
 ncclResult_t ncclEnqueueButterfly2::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
   if (info->coll == ncclCollBroadcast) {
-    info->algorithm = NCCL_ALGO_RING;
+    info->algorithm = NCCL_ALGO_BUTTERFLY_YZ;
     *redirect = true;
     return ncclSuccess;
   }

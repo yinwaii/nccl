@@ -60,7 +60,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, AlgoInfo<ncclTopoAlgo> algos
   int nChannels = comm->nChannels;
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    if (comm->algoEnable[a])
+    if (comm->algoEnable[a] || a == NCCL_ALGO_BUTTERFLY_YZ)
       NCCLCHECK(algos[a]->topoPostset(firstRanks, allTopoRanks));
   }
 
