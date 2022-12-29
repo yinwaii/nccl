@@ -142,6 +142,10 @@ struct PrimitivesWithoutDirect {
   __device__ void directRecv(T* dst, ssize_t directOffset, int nelem) {
     static_cast<RealPrimitives*>(this)->recv(dst, nelem);
   }
+  __device__ void conSend(const T *src, int nelem) {
+  }
+  __device__ void conRecv(T *dst, int nelem) {
+  }
   __device__ void directCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
     static_cast<RealPrimitives*>(this)->copySend(src, dst, nelem);
   }

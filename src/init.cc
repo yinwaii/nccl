@@ -527,6 +527,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     maxCompCap = std::max(allGather3Data[i].cudaCompCap, maxCompCap);
   }
 
+  NCCLCHECK(ncclTopoEnable(comm, minCompCap, maxCompCap));
+
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));

@@ -48,54 +48,54 @@ namespace {
         return gridOffset + (chunk*nChannels + bid)*realChunkSize*meshCross->nInterRanks + slice * realChunkSize;
     };
 
-    auto interReduce = [&] __device__(Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> &prims) -> void {
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
-        /////////////// begin AllReduce steps ///////////////
-        ssize_t offset;
-        int nelem;
-        int chunk;
-        int slice;
-        int nSubRanks = meshCross->nIntraRanks / meshCross->nInterRanks;
+    // auto interReduce = [&] __device__(Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> &prims) -> void {
+    //   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    //     ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
+    //     /////////////// begin AllReduce steps ///////////////
+    //     ssize_t offset;
+    //     int nelem;
+    //     int chunk;
+    //     int slice;
+    //     int nSubRanks = meshCross->nIntraRanks / meshCross->nInterRanks;
 
-        chunk = comm->rank / meshCross->nIntraRanks * nSubRanks + (comm->rank % nSubRanks);
-        if (gridOffset == 0 && tid == 0)
-          printf("%d --> %d\n", comm->rank, chunk);
-        slice = meshCross->devInterRanks[meshCross->nInterRanks - 1] % meshCross->nInterRanks;
-        offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
-        nelem = min(realChunkSize, size - offset);
+    //     chunk = comm->rank / meshCross->nIntraRanks * nSubRanks + (comm->rank % nSubRanks);
+    //     if (gridOffset == 0 && tid == 0)
+    //       printf("%d --> %d\n", comm->rank, chunk);
+    //     slice = meshCross->devInterRanks[meshCross->nInterRanks - 1] % meshCross->nInterRanks;
+    //     offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
+    //     nelem = min(realChunkSize, size - offset);
 
-        prims.send(thisOutput + offset, nelem);
+    //     prims.send(thisOutput + offset, nelem);
 
-        for (int j = 2; j < meshCross->nInterRanks; ++j) {
-          slice = meshCross->devInterRanks[meshCross->nInterRanks - j] % meshCross->nInterRanks;
-          offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
-          nelem = min(realChunkSize, size - offset);
+    //     for (int j = 2; j < meshCross->nInterRanks; ++j) {
+    //       slice = meshCross->devInterRanks[meshCross->nInterRanks - j] % meshCross->nInterRanks;
+    //       offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
+    //       nelem = min(realChunkSize, size - offset);
 
-          prims.recvReduceSend(thisOutput + offset, nelem);
-        }
+    //       prims.recvReduceSend(thisOutput + offset, nelem);
+    //     }
 
-        slice = meshCross->devInterRanks[0] % meshCross->nInterRanks;
-        offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
-        nelem = min(realChunkSize, size - offset);
+    //     slice = meshCross->devInterRanks[0] % meshCross->nInterRanks;
+    //     offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
+    //     nelem = min(realChunkSize, size - offset);
 
-        prims.directRecvReduceCopySend(thisOutput + offset, thisOutput + offset, offset, nelem);
+    //     prims.directRecvReduceCopySend(thisOutput + offset, thisOutput + offset, offset, nelem);
 
-        for (int j = 1; j < meshCross->nInterRanks - 1; ++j) {
-          slice = meshCross->devInterRanks[meshCross->nInterRanks - j] % meshCross->nInterRanks;
-          offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
-          nelem = min(realChunkSize, size - offset);
+    //     for (int j = 1; j < meshCross->nInterRanks - 1; ++j) {
+    //       slice = meshCross->devInterRanks[meshCross->nInterRanks - j] % meshCross->nInterRanks;
+    //       offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
+    //       nelem = min(realChunkSize, size - offset);
 
-          prims.directRecvCopySend(thisOutput+offset, offset, nelem);
-        }
+    //       prims.directRecvCopySend(thisOutput+offset, offset, nelem);
+    //     }
 
-        slice = meshCross->devInterRanks[1] % meshCross->nInterRanks;
-        offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
-        nelem = min(realChunkSize, size - offset);
+    //     slice = meshCross->devInterRanks[1] % meshCross->nInterRanks;
+    //     offset = calcOffset(gridOffset, realChunkSize, chunk, slice);
+    //     nelem = min(realChunkSize, size - offset);
 
-        prims.directRecv(thisOutput + offset, offset, nelem);
-      }
-    };
+    //     prims.directRecv(thisOutput + offset, offset, nelem);
+    //   }
+    // };
 
     Primitives<T, RedOp, FanSymmetric<1>, 1, Proto>
       primIntra(tid, nthreads, &meshCross->intra_prev, &meshCross->intra_next, thisOutput, channel, comm);
@@ -156,13 +156,13 @@ namespace {
     if (tid == 0)
       printf("Step 3 begin...\n");
 
-    if (meshCross->nInterRanks != meshCross->nIntraRanks) {
-      Primitives<T, RedOp, FanSymmetric<1>, 1, Proto>
-        primInter(tid, nthreads, &meshCross->inter_prev, &meshCross->inter_next, thisOutput, channel, comm);
-      interReduce(primInter);
-    }
-    else
-      interReduce(primIntra);
+    // if (meshCross->nInterRanks != meshCross->nIntraRanks) {
+    //   Primitives<T, RedOp, FanSymmetric<1>, 1, Proto>
+    //     primInter(tid, nthreads, &meshCross->inter_prev, &meshCross->inter_next, thisOutput, channel, comm);
+    //   interReduce(primInter);
+    // }
+    // else
+    //   interReduce(primIntra);
 
     if (tid == 0)
       printf("Step 3 end...\n");

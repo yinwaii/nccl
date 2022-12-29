@@ -55,12 +55,12 @@ namespace {
         ssize_t chunkOffset = gridOffset + bid * realChunkSize;
         int nelem = min(realChunkSize, size - chunkOffset);
         if (tid == 0) {
-          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
+          printf("%d: chunkOffset: %ld nelem: %d\n", comm->rank, chunkOffset, nelem);
         }
         if (send)
-          prims.send(thisInput+chunkOffset, nelem);
+          prims.send((step>0?thisOutput:thisInput)+chunkOffset, nelem);
         if (recv)
-          prims.recvReduceCopy(thisInput+chunkOffset, thisOutput+chunkOffset, nelem);
+          prims.recvReduceCopy((step>0?thisOutput:thisInput)+chunkOffset, thisOutput+chunkOffset, nelem);
       }
       if (tid == 0)
         printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
@@ -74,7 +74,7 @@ namespace {
     for (int p = 0; p < log2i(comm->nRanks); p++) {
       int peer = butterfly->devPeerRanks[p];
       if (peer != -1)
-        reduce(peer, true, true, p + 1);
+        reduce(peer, true, true, p + (edgeRank != -1 ? 1 : 0));
     }
 
     if (edgeRank != -1)

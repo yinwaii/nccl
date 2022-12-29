@@ -151,6 +151,7 @@ struct ncclComm {
   struct ncclP2Plist p2plist;
 
   int algoEnable[NCCL_NUM_ALGORITHMS];
+  int protoEnable[NCCL_NUM_PROTOCOLS];
 
   // For mesh cross
   int nPartitions;

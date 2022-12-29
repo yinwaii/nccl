@@ -12,7 +12,7 @@ namespace {
 //   }
   template<typename T, typename RedOp, typename Proto>
   __device__ void runButterfly2(struct CollectiveArgs* args) {
-		const int tid = threadIdx.x;
+    const int tid = threadIdx.x;
     const int nthreads = args->coll.nThreads - Proto::Warp;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
@@ -28,14 +28,6 @@ namespace {
     // Compute pointers
     const T *__restrict__ thisInput = (const T *)args->sendbuff;
     T *__restrict__ thisOutput = (T *)args->recvbuff;
-    if (tid == 0) {
-      for (int p = 0; p < log2i(comm->nRanks); p++) {
-        int peer = butterfly->devPeerRanks[p];
-        if (peer != -1) {
-          printf("%d: Peer is %d\n", p, peer);
-        }
-      }
-    }
 
     auto getRealChunkSize = [&] __device__(ssize_t gridOffset, ssize_t tailOffset) -> ssize_t {
       ssize_t realChunkSize;
@@ -48,58 +40,106 @@ namespace {
       return int(realChunkSize);
     };
 
-    auto reduce = [&]__device__(int peer, int step, bool scatter, bool edge) -> void {
-      Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
-        prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm);
-
-      if (tid == 0)
-        printf("%d: START FOR peer %d\n", comm->rank, peer);
-      ssize_t length = edge ? size : (size >> (step + 1));
-      ssize_t splitOffset = edge ? 0 : length;
-      bool forward = rank < peer, direction = scatter ? forward : !forward;
-      if (!forward && !scatter)
-        commOffset -= splitOffset;
-      ssize_t initOffset = edge ? 0 : commOffset;
-      for (ssize_t gridOffset = initOffset; gridOffset < initOffset + length; gridOffset += loopSize)
-      {
-        ssize_t realChunkSize = getRealChunkSize(gridOffset, initOffset + length);
-        ssize_t chunkOffset = gridOffset + bid * realChunkSize;
-        int nelem = min(realChunkSize, initOffset + length - chunkOffset);
-        if (tid == 0) {
-          printf("%d: chunkOffset: %ld nelem: %d", comm->rank, chunkOffset, nelem);
-        }
-        if (!edge || edge && direction)
-          prims.send(thisInput+chunkOffset+(direction?splitOffset:0), nelem);
-        if (!edge || edge && !direction) {
-          if (scatter)
-            prims.recvReduceCopy(thisInput+chunkOffset+(!direction?splitOffset:0), thisOutput+chunkOffset+(!direction?splitOffset:0), nelem);
-          else
-            prims.recv(thisOutput+chunkOffset+(!direction?splitOffset:0), nelem);
-        }
-      }
-      if (!forward && scatter)
-        commOffset += splitOffset;
-      if (tid == 0)
-        printf("%d: COMPLETED FOR peer %d\n", comm->rank, peer);
-    };
-
     int edgeRank = butterfly->edgeRank, nSteps = log2i(comm->nRanks);
-    if (edgeRank != -1)
-      reduce(edgeRank, nSteps, true, true);
+
+    if (edgeRank != -1) {
+      Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
+        prims(tid, nthreads, &edgeRank, &edgeRank, thisOutput, channel, comm);
+
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize)
+      {
+        ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
+        ssize_t chunkOffset = gridOffset + bid * realChunkSize;
+        int nelem = min(realChunkSize, size - chunkOffset);
+
+        if (rank < edgeRank)
+          prims.send(thisInput+chunkOffset, nelem);
+        else
+          prims.recvReduceCopy(thisInput+chunkOffset, thisOutput+chunkOffset, nelem);
+      }
+    }
+
     for (int p = 0; p < nSteps; p++) {
       int peer = butterfly->devPeerRanks[p];
       if (peer != -1) {
-        reduce(peer, p, true, false);
+        Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
+          prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm);
+
+        ssize_t length = size >> (p + 1);
+        const T *stepInput = (p > 0 || edgeRank != -1 && rank > edgeRank) ? thisOutput : thisInput;
+        
+        for (ssize_t gridOffset = commOffset; gridOffset < commOffset + length; gridOffset += loopSize)
+        {
+          ssize_t realChunkSize = getRealChunkSize(gridOffset, commOffset + length);
+          ssize_t chunkOffset = gridOffset + bid * realChunkSize;
+          int nelem = min(realChunkSize, commOffset + length - chunkOffset);
+          if (rank < peer) {
+            prims.send(stepInput + chunkOffset + length, nelem);
+            prims.recvReduceCopy(stepInput + chunkOffset, thisOutput + chunkOffset, nelem);
+          }
+          else {
+            prims.send(stepInput + chunkOffset, nelem);
+            prims.recvReduceCopy(stepInput + chunkOffset + length, thisOutput + chunkOffset + length, nelem);
+          }
+        }
+
+        if (rank > peer)
+          commOffset += length;
+        if (Proto::Id == NCCL_PROTO_SIMPLE) {
+          prims.conRecv(thisOutput, 1);
+          prims.conSend(thisInput, 1);
+        }
       }
     }
+
     for (int p = nSteps - 1; p >= 0; p--) {
       int peer = butterfly->devPeerRanks[p];
       if (peer != -1) {
-        reduce(peer, p, false, false);
+        Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
+          prims(tid, nthreads, &peer, &peer, thisOutput, channel, comm);
+
+        ssize_t length = size >> (p + 1);
+
+        if (rank > peer)
+          commOffset -= length;
+
+        for (ssize_t gridOffset = commOffset; gridOffset < commOffset + length; gridOffset += loopSize)
+        {
+          ssize_t realChunkSize = getRealChunkSize(gridOffset, commOffset + length);
+          ssize_t chunkOffset = gridOffset + bid * realChunkSize;
+          int nelem = min(realChunkSize, commOffset + length - chunkOffset);
+          if (rank < peer) {
+            prims.send(thisOutput + chunkOffset, nelem);
+            prims.recv(thisOutput + chunkOffset + length, nelem);
+          }
+          else {
+            prims.send(thisOutput + chunkOffset + length, nelem);
+            prims.recv(thisOutput + chunkOffset, nelem);
+          }
+        }
+        if (Proto::Id == NCCL_PROTO_SIMPLE) {
+          prims.conRecv(thisOutput, 1);
+          prims.conSend(thisInput, 1);
+        }
       }
     }
-    if (edgeRank != -1)
-      reduce(edgeRank, nSteps, false, true);
+    
+    if (edgeRank != -1) {
+      Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
+        prims(tid, nthreads, &edgeRank, &edgeRank, thisOutput, channel, comm);
+
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize)
+      {
+        ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
+        ssize_t chunkOffset = gridOffset + bid * realChunkSize;
+        int nelem = min(realChunkSize, size - chunkOffset);
+
+        if (rank < edgeRank)
+          prims.recv(thisOutput+chunkOffset, nelem);
+        else
+          prims.send(thisOutput+chunkOffset, nelem);
+      }
+    }
   }
 }
 

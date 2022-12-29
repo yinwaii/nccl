@@ -59,8 +59,10 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, AlgoInfo<ncclTopoAlgo> algos
   int nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
-  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-    NCCLCHECK(algos[a]->topoPostset(firstRanks, allTopoRanks));
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
+    if (comm->algoEnable[a])
+      NCCLCHECK(algos[a]->topoPostset(firstRanks, allTopoRanks));
+  }
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);

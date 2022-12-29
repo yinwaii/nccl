@@ -53,17 +53,19 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, AlgoInfo<ncclTuningAlgo> algos) {
+ncclResult_t ncclTopoEnable(struct ncclComm *comm, int minCompCap, int maxCompCap) {
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
-  int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
+  comm->protoEnable[NCCL_PROTO_LL] = 1;
+  comm->protoEnable[NCCL_PROTO_LL128] = 2;
+  comm->protoEnable[NCCL_PROTO_SIMPLE] = 1;
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
     comm->algoEnable[a] = 1;
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) {
     INFO(NCCL_ENV, "NCCL_PROTO set by environment to %s", protoStr);
-    NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
+    NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, comm->protoEnable));
   }
   const char *algoStr = getenv("NCCL_ALGO");
   if (algoStr) {
@@ -87,9 +89,12 @@ ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCo
     }
     comm->algoEnable[NCCL_ALGO_COLLNET] = 0;
   }
+  return ncclSuccess;
+}
 
+ncclResult_t ncclTopoTuneEnable(struct ncclComm *comm, int minCompCap, int maxCompCap, AlgoInfo<ncclTuningAlgo> algos) {
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    int pEnable = protoEnable[p];
+    int pEnable = comm->protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta/Ampere+NVLink. Other cases are not tested and may cause silent data corruption.
       pEnable = (algos[a]->topo->graph.typeInter <= PATH_PXB) && algos[a]->topo->graph.typeIntra <= PATH_NVL &&
