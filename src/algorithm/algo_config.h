@@ -9,9 +9,11 @@
   f(BUTTERFLY, ##__VA_ARGS__) \
   f(BUTTERFLY2, ##__VA_ARGS__) \
   f(BUTTERFLY_YZ, ##__VA_ARGS__) \
-  f(MESH_CROSS, ##__VA_ARGS__)
+  f(MESH_CROSS, ##__VA_ARGS__) \
+  f(BUTTERFLY_2D, ##__VA_ARGS__) \
+  f(RING_2D, ##__VA_ARGS__)
 
-#define NCCL_NUM_ALGORITHMS 7 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 9 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
@@ -19,6 +21,8 @@
 #define NCCL_ALGO_BUTTERFLY2 4
 #define NCCL_ALGO_BUTTERFLY_YZ 5
 #define NCCL_ALGO_MESH_CROSS 6
+#define NCCL_ALGO_BUTTERFLY_2D 7
+#define NCCL_ALGO_RING_2D 8
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction
@@ -67,6 +71,31 @@ struct ncclMeshCross {
   int mirror;
 };
 
+struct ncclButterfly2D {
+  int intra_prev;
+  int intra_next;
+  int *intraRanks;
+  int *devIntraRanks;
+  int nIntraRanks;
+  int edgeRank;
+  int *peerRanks;
+  int *devPeerRanks;
+  int nPeerRanks;
+};
+
+struct ncclRing2D {
+  int intra_prev;
+  int intra_next;
+  int *intraRanks;
+  int *devIntraRanks;
+  int nIntraRanks;
+  int inter_prev;
+  int inter_next;
+  int *interRanks;
+  int *devInterRanks;
+  int nInterRanks;
+};
+
 #define NCCL_MAX_BUTTERFLY_STEPS 10
 struct ncclButterfly_yz {
   int myRank;
@@ -86,6 +115,8 @@ struct ncclChannel {
       struct ncclButterfly butterfly;
       struct ncclButterfly_yz butterfly_yz;
       struct ncclMeshCross meshCross;
+      struct ncclButterfly2D butterfly2d;
+      struct ncclRing2D ring2d;
 
       int id;
 

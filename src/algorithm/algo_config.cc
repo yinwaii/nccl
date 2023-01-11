@@ -9,6 +9,8 @@ AlgoInfo<ncclTopoAlgo> ncclTopoAlgos(struct ncclComm *comm) {
   topoAlgos[NCCL_ALGO_BUTTERFLY2] = std::make_shared<ncclTopoButterfly2>(comm);
   topoAlgos[NCCL_ALGO_BUTTERFLY_YZ] = std::make_shared<ncclTopoButterfly_yz>(comm);
   topoAlgos[NCCL_ALGO_MESH_CROSS] = std::make_shared<ncclTopoMeshCross>(comm);
+  topoAlgos[NCCL_ALGO_BUTTERFLY_2D] = std::make_shared<ncclTopoButterfly2D>(comm);
+  topoAlgos[NCCL_ALGO_RING_2D] = std::make_shared<ncclTopoRing2D>(comm);
   return topoAlgos;
 }
 
@@ -20,6 +22,8 @@ ncclResult_t ncclTopoInit(const AlgoInfo<ncclTopoAlgo> &algos) {
   NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY2]->graphInit(NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
   NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY_YZ]->graphInit(NCCL_TOPO_PATTERN_BUTTERFLY, 1, MAXCHANNELS));
   NCCLCHECK(algos[NCCL_ALGO_MESH_CROSS]->graphInit(NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
+  NCCLCHECK(algos[NCCL_ALGO_BUTTERFLY_2D]->graphInit(NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
+  NCCLCHECK(algos[NCCL_ALGO_RING_2D]->graphInit(NCCL_TOPO_PATTERN_RING, 1, algos[NCCL_ALGO_RING]->graph.nChannels));
   return ncclSuccess;
 }
 
@@ -33,6 +37,8 @@ AlgoInfo<ncclTuningAlgo> ncclTuningAlgos(struct ncclComm *comm,
   tuningAlgos[NCCL_ALGO_BUTTERFLY2] = std::make_shared<ncclTuningButterfly2>(comm, topoAlgos[NCCL_ALGO_BUTTERFLY2]);
   tuningAlgos[NCCL_ALGO_BUTTERFLY_YZ] = std::make_shared<ncclTuningButterfly_yz>(comm, topoAlgos[NCCL_ALGO_BUTTERFLY_YZ]);
   tuningAlgos[NCCL_ALGO_MESH_CROSS] = std::make_shared<ncclTuningMeshCross>(comm, topoAlgos[NCCL_ALGO_MESH_CROSS]);
+  tuningAlgos[NCCL_ALGO_BUTTERFLY_2D] = std::make_shared<ncclTuningButterfly2D>(comm, topoAlgos[NCCL_ALGO_BUTTERFLY_2D]);
+  tuningAlgos[NCCL_ALGO_RING_2D] = std::make_shared<ncclTuningRing2D>(comm, topoAlgos[NCCL_ALGO_RING_2D]);
   return tuningAlgos;
 }
 
@@ -45,8 +51,10 @@ AlgoInfo<ncclEnqueueAlgo> ncclEnqueueAlgos() {
   enqueueAlgos[NCCL_ALGO_BUTTERFLY2] = std::make_unique<ncclEnqueueButterfly2>();
   enqueueAlgos[NCCL_ALGO_BUTTERFLY_YZ] = std::make_unique<ncclEnqueueButterfly_yz>();
   enqueueAlgos[NCCL_ALGO_MESH_CROSS] = std::make_unique<ncclEnqueueMeshCross>();
+  enqueueAlgos[NCCL_ALGO_BUTTERFLY_2D] = std::make_unique<ncclEnqueueButterfly2D>();
+  enqueueAlgos[NCCL_ALGO_RING_2D] = std::make_unique<ncclEnqueueRing2D>();
   return enqueueAlgos;
 }
 
 AlgoInfo<ncclEnqueueAlgo> ncclAlgos = ncclEnqueueAlgos();
-const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS] = {"Tree", "Ring", "CollNet", "Butterfly", "Butterfly2", "Butterfly_yz", "Mesh_cross"};
+const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS] = {"Tree", "Ring", "CollNet", "Butterfly", "Butterfly2", "Butterfly_yz", "Mesh_cross", "Butterfly2D", "Ring2D"};

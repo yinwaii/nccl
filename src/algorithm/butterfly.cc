@@ -17,8 +17,8 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
     channel->butterfly.edgeRank = edgePeer < nranks ? edgePeer : -1;
     for (int mask = 0; mask < log2i(nranks); mask++) {
       int peer = rank ^ (1 << mask);
-      peerRanks[(c + nChannels) * nranks + mask] =
-          peerRanks[c * nranks + mask] = (rank & edge) ? -1 : peer;
+      peerRanks[(c + nChannels) * log2i(nranks) + mask] =
+          peerRanks[c * log2i(nranks) + mask] = (rank & edge) ? -1 : peer;
     }
   }
 
@@ -45,7 +45,7 @@ ncclResult_t ncclTopoButterfly::transportSetup() {
       continue;
     sprintf(line + strlen(line), "Peer Ranks: ");
     for (int i = 0; i < log2i(nranks); i++) {
-      channel->butterfly.peerRanks[i] = peerRanks[c * nranks + i];
+      channel->butterfly.peerRanks[i] = peerRanks[c * log2i(nranks) + i];
       int peer = channel->butterfly.peerRanks[i];
       sprintf(line + strlen(line), "%d/", peer);
       if (peer != -1)

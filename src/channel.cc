@@ -25,6 +25,18 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   NCCLCHECK(ncclCudaCalloc(&channel->meshCross.devInterRanks, comm->nPartitions));
   NCCLCHECK(ncclCalloc(&channel->meshCross.interRanks, comm->nPartitions));
 
+  NCCLCHECK(ncclCudaCalloc(&channel->butterfly2d.devIntraRanks, comm->localRanks));
+  NCCLCHECK(ncclCalloc(&channel->butterfly2d.intraRanks, comm->localRanks));
+
+  NCCLCHECK(ncclCudaCalloc(&channel->butterfly2d.devPeerRanks, log2i(comm->nNodes)));
+  NCCLCHECK(ncclCalloc(&channel->butterfly2d.peerRanks, log2i(comm->nNodes)));
+
+  NCCLCHECK(ncclCudaCalloc(&channel->ring2d.devIntraRanks, comm->localRanks));
+  NCCLCHECK(ncclCalloc(&channel->ring2d.intraRanks, comm->localRanks));
+
+  NCCLCHECK(ncclCudaCalloc(&channel->ring2d.devInterRanks, comm->nNodes));
+  NCCLCHECK(ncclCalloc(&channel->ring2d.interRanks, comm->nNodes));
+
   // Communication structures with peers.
   NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks+1)); // The extra one rank is for collnet root (i.e. network)
   NCCLCHECK(ncclCalloc(&channel->peers, comm->nRanks+1));
@@ -55,6 +67,18 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
 
   free(channel->meshCross.interRanks);
   CUDACHECK(cudaFree(channel->meshCross.devInterRanks));
+
+  free(channel->butterfly2d.peerRanks);
+  CUDACHECK(cudaFree(channel->butterfly2d.devPeerRanks));
+
+  free(channel->butterfly2d.intraRanks);
+  CUDACHECK(cudaFree(channel->butterfly2d.devIntraRanks));
+
+  free(channel->ring2d.interRanks);
+  CUDACHECK(cudaFree(channel->ring2d.devInterRanks));
+
+  free(channel->ring2d.intraRanks);
+  CUDACHECK(cudaFree(channel->ring2d.devIntraRanks));
 
   // Free transport proxy resources
   // Note: free all send resources first due to CollNet arrangement

@@ -263,6 +263,10 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].butterfly.devPeerRanks, comm->channels[r].butterfly.peerRanks, log2i(comm->nRanks)));
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].meshCross.devIntraRanks, comm->channels[r].meshCross.intraRanks, comm->nSubRanks * comm->nPartitions));
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].meshCross.devInterRanks, comm->channels[r].meshCross.interRanks, comm->nPartitions));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].butterfly2d.devIntraRanks, comm->channels[r].butterfly2d.intraRanks, comm->localRanks));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].butterfly2d.devPeerRanks, comm->channels[r].butterfly2d.peerRanks, log2i(comm->nNodes)));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring2d.devIntraRanks, comm->channels[r].ring2d.intraRanks, comm->localRanks));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring2d.devInterRanks, comm->channels[r].ring2d.interRanks, comm->nNodes));
   }
 
   // Duplicate the dev comm on the device

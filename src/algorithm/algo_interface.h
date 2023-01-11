@@ -8,6 +8,8 @@
 #include "butterfly.h"
 #include "butterfly2.h"
 #include "mesh_cross.h"
+#include "butterfly2d.h"
+#include "ring2d.h"
 #include "comm.h"
 #include "../graph/topo.h"
 #include "../graph/tuning.h"
