@@ -6,6 +6,9 @@
 #include "ring.h"
 
 class ncclTopoRing2D : public ncclTopoBase {
+private:
+  int *intraRanks, *interRanks;
+
 public:
   ncclTopoRing2D(struct ncclComm *comm);
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
@@ -17,8 +20,7 @@ public:
 class ncclEnqueueRing2D : public ncclEnqueueBase {
 private:
   enum Patterns { ncclPatternRing2D, ncclPatternBroadcast };
-  int getNsteps(struct ncclProxyArgs *args, struct ncclInfo *info,
-                int nstepsPerLoop) const;
+  int getNsteps(struct ncclProxyArgs *args, struct ncclInfo *info, int nchunksPerLoop, int nstepsPerLoop) const;
 
 public:
   ncclEnqueueRing2D() : ncclEnqueueBase("Ring2D") {}

@@ -22,6 +22,8 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
     }
   }
 
+  comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
+
   return ncclSuccess;
 }
 

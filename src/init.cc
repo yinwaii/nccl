@@ -591,7 +591,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-    if (comm->algoEnable[a] || a == NCCL_ALGO_BUTTERFLY_YZ)
+    if (comm->algoEnable[a])
       NCCLCHECKGOTO(algos[a]->transportSetup(), ret, affinity_restore);
   }
 

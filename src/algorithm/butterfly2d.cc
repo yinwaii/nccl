@@ -28,6 +28,8 @@ ncclResult_t ncclTopoButterfly2D::topoPreset(struct ncclTopoRanks *topoRanks) {
     }
   }
 
+  comm->algoEnable[NCCL_ALGO_RING] = 1;
+
   return ncclSuccess;
 }
 

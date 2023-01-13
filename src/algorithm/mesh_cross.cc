@@ -32,6 +32,7 @@ ncclResult_t ncclTopoMeshCross::topoPreset(struct ncclTopoRanks *topoRanks) {
 		TRACE(NCCL_GRAPH, "Mesh %d(%d,%d)-%d: %d(up) -> %d(left) -> %d(mirror) -> %d(right) -> %d(down)", comm->rank, row, col, c, channel->meshCross.inter_prev, channel->meshCross.intra_prev, channel->meshCross.mirror, channel->meshCross.intra_next, channel->meshCross.inter_next);
   }
 
+  comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
   return ncclSuccess;
 }
 
