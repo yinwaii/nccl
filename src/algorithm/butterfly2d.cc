@@ -152,16 +152,15 @@ int ncclEnqueueButterfly2D::getNsteps(struct ncclProxyArgs *args, struct ncclInf
   return info->nstepsPerLoop * nLoops * args->chunkSteps;
 }
 
-ncclResult_t ncclEnqueueButterfly2D::proxySaveColl(struct ncclProxyArgs *args,
-                                                 struct ncclInfo *info) const {
+ncclResult_t ncclEnqueueButterfly2D::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const {
   int pattern = info->pattern;
   struct ncclButterfly2D *butterfly2d = &args->channel->butterfly2d;
   int nRanks = info->comm->nRanks;
   if (pattern == ncclPatternButterfly2D) {
-		if (info->comm->localRanks > 1) {
-      NCCLCHECK(SaveProxy<proxySend>(butterfly2d->intra_next, args));
-			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->intra_prev, args));
-		}
+		// if (info->comm->localRanks > 1) {
+    //   NCCLCHECK(SaveProxy<proxySend>(butterfly2d->intra_next, args));
+		// 	NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->intra_prev, args));
+		// }
 		if (butterfly2d->edgeRank != -1) {
 			NCCLCHECK(SaveProxy<proxySend>(butterfly2d->edgeRank, args));
 			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->edgeRank, args));
