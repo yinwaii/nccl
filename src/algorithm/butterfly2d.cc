@@ -157,10 +157,10 @@ ncclResult_t ncclEnqueueButterfly2D::proxySaveColl(struct ncclProxyArgs *args, s
   struct ncclButterfly2D *butterfly2d = &args->channel->butterfly2d;
   int nRanks = info->comm->nRanks;
   if (pattern == ncclPatternButterfly2D) {
-		// if (info->comm->localRanks > 1) {
-    //   NCCLCHECK(SaveProxy<proxySend>(butterfly2d->intra_next, args));
-		// 	NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->intra_prev, args));
-		// }
+		if (info->comm->localRanks > 1) {
+      NCCLCHECK(SaveProxy<proxySend>(butterfly2d->intra_next, args));
+			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->intra_prev, args));
+		}
 		if (butterfly2d->edgeRank != -1) {
 			NCCLCHECK(SaveProxy<proxySend>(butterfly2d->edgeRank, args));
 			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->edgeRank, args));

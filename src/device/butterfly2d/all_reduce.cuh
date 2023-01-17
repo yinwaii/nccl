@@ -50,45 +50,45 @@ namespace {
 
     if (tid == 0)
       printf("Step 1: Intra-node reducescatter\n");
-    // if (butterfly->nIntraRanks > 1) {
-    //   Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> primIntra(tid, nthreads, &butterfly->intra_prev, &butterfly->intra_next, thisOutput, channel, comm);
-    //   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    //     ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
-    //     /////////////// begin AllReduce steps ///////////////
-    //     ssize_t offset;
-    //     int nelem;
-    //     int chunk;
+    if (butterfly->nIntraRanks > 1) {
+      Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> primIntra(tid, nthreads, &butterfly->intra_prev, &butterfly->intra_next, thisOutput, channel, comm);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
+        /////////////// begin AllReduce steps ///////////////
+        ssize_t offset;
+        int nelem;
+        int chunk;
 
-    //     // step 0: push data to next GPU
-    //     chunk = butterfly->devIntraRanks[butterfly->nIntraRanks-1];
-    //     offset = calcOffset(gridOffset, realChunkSize, chunk);
-    //     nelem = min(realChunkSize, size-offset);
+        // step 0: push data to next GPU
+        chunk = butterfly->devIntraRanks[butterfly->nIntraRanks-1];
+        offset = calcOffset(gridOffset, realChunkSize, chunk);
+        nelem = min(realChunkSize, size-offset);
 
-    //     primIntra.send(thisInput+offset, nelem);
+        primIntra.send(thisInput+offset, nelem);
 
-    //     // k-2 steps: reduce and copy to next GPU
-    //     for (int j=2; j<butterfly->nIntraRanks; ++j) {
-    //       chunk = butterfly->devIntraRanks[butterfly->nIntraRanks-j];
-    //       offset = calcOffset(gridOffset, realChunkSize, chunk);
-    //       nelem = min(realChunkSize, size-offset);
+        // k-2 steps: reduce and copy to next GPU
+        for (int j=2; j<butterfly->nIntraRanks; ++j) {
+          chunk = butterfly->devIntraRanks[butterfly->nIntraRanks-j];
+          offset = calcOffset(gridOffset, realChunkSize, chunk);
+          nelem = min(realChunkSize, size-offset);
 
-    //       primIntra.recvReduceSend(thisInput+offset, nelem);
-    //     }
+          primIntra.recvReduceSend(thisInput+offset, nelem);
+        }
 
-    //     // step k-1: reduce this buffer and data, which will produce the final
-    //     // result that we store in this data and push to the next GPU
-    //     chunk = butterfly->devIntraRanks[0];
-    //     offset = calcOffset(gridOffset, realChunkSize, chunk);
-    //     nelem = min(realChunkSize, size-offset);
+        // step k-1: reduce this buffer and data, which will produce the final
+        // result that we store in this data and push to the next GPU
+        chunk = butterfly->devIntraRanks[0];
+        offset = calcOffset(gridOffset, realChunkSize, chunk);
+        nelem = min(realChunkSize, size-offset);
 
-    //     primIntra.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-    //   }
-    // }
+        primIntra.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
+      }
+    }
 
     if (tid == 0)
       printf("Step 2: Inter-node allreduce\n");
 
-    int edgeRank = butterfly->edgeRank, nSteps = log2i(comm->nRanks);
+    int edgeRank = butterfly->edgeRank;
 
     if (edgeRank != -1) {
       Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
@@ -107,7 +107,7 @@ namespace {
       }
     }
 
-    for (int p = 0; p < nSteps; p++) {
+    for (int p = 0; p < butterfly->nPeerRanks; p++) {
       int peer = butterfly->devPeerRanks[p];
       if (peer != -1) {
         Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
@@ -140,7 +140,7 @@ namespace {
       }
     }
 
-    for (int p = nSteps - 1; p >= 0; p--) {
+    for (int p = butterfly->nPeerRanks - 1; p >= 0; p--) {
       int peer = butterfly->devPeerRanks[p];
       if (peer != -1) {
         Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
@@ -192,41 +192,41 @@ namespace {
     if (tid == 0)
       printf("Step 3: Intra-node allgather\n");
 
-    // if (butterfly->nIntraRanks > 1) {
-    //   Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> primIntra(tid, nthreads, &butterfly->intra_prev, &butterfly->intra_next, thisOutput, channel, comm);
-    //   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    //     ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
-    //     /////////////// begin AllReduce steps ///////////////
-    //     ssize_t offset;
-    //     int nelem;
-    //     int chunk;
+    if (butterfly->nIntraRanks > 1) {
+      Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> primIntra(tid, nthreads, &butterfly->intra_prev, &butterfly->intra_next, thisOutput, channel, comm);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t realChunkSize = getRealChunkSize(gridOffset, size);
+        /////////////// begin AllReduce steps ///////////////
+        ssize_t offset;
+        int nelem;
+        int chunk;
 
-    //     // step k-1: reduce this buffer and data, which will produce the final
-    //     // result that we store in this data and push to the next GPU
-    //     chunk = butterfly->devIntraRanks[0];
-    //     offset = calcOffset(gridOffset, realChunkSize, chunk);
-    //     nelem = min(realChunkSize, size-offset);
+        // step k-1: reduce this buffer and data, which will produce the final
+        // result that we store in this data and push to the next GPU
+        chunk = butterfly->devIntraRanks[0];
+        offset = calcOffset(gridOffset, realChunkSize, chunk);
+        nelem = min(realChunkSize, size-offset);
 
-    //     primIntra.directSend(thisOutput+offset, offset, nelem);
+        primIntra.directSend(thisOutput+offset, offset, nelem);
 
-    //     // k-2 steps: copy to next GPU
-    //     for (int j=1; j<butterfly->nIntraRanks-1; ++j) {
-    //       chunk = butterfly->devIntraRanks[butterfly->nIntraRanks - j];
-    //       offset = calcOffset(gridOffset, realChunkSize, chunk);
-    //       nelem = min(realChunkSize, size-offset);
+        // k-2 steps: copy to next GPU
+        for (int j=1; j<butterfly->nIntraRanks-1; ++j) {
+          chunk = butterfly->devIntraRanks[butterfly->nIntraRanks - j];
+          offset = calcOffset(gridOffset, realChunkSize, chunk);
+          nelem = min(realChunkSize, size-offset);
 
-    //       primIntra.directRecvCopySend(thisOutput+offset, offset, nelem);
-    //     }
+          primIntra.directRecvCopySend(thisOutput+offset, offset, nelem);
+        }
 
-    //     // Make final copy from buffer to dest.
-    //     chunk = butterfly->devIntraRanks[1];
-    //     offset = calcOffset(gridOffset, realChunkSize, chunk);
-    //     nelem = min(realChunkSize, size-offset);
+        // Make final copy from buffer to dest.
+        chunk = butterfly->devIntraRanks[1];
+        offset = calcOffset(gridOffset, realChunkSize, chunk);
+        nelem = min(realChunkSize, size-offset);
 
-    //     // Final wait/copy.
-    //     primIntra.directRecv(thisOutput+offset, offset, nelem);
-    //   }
-    // }
+        // Final wait/copy.
+        primIntra.directRecv(thisOutput+offset, offset, nelem);
+      }
+    }
   }
 }
 
