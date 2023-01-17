@@ -59,7 +59,7 @@ ncclResult_t ncclTopoRing2D::topoPostset(int *firstRanks, struct ncclTopoRanks *
 
     for (int i = 0; i < nNodes; i++) {
       int interPeer = (node + i) % nNodes;
-      intraRanks[(c + nChannels) * nNodes + i] = intraRanks[c * nNodes + i] = interPeer;
+      interRanks[(c + nChannels) * nNodes + i] = interRanks[c * nNodes + i] = interPeer;
     }
 
 		channel0->ring2d.nIntraRanks = channel1->ring2d.nIntraRanks = localRanks;
