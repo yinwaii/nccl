@@ -88,6 +88,7 @@ ncclResult_t ncclTopoEnable(struct ncclComm *comm, int minCompCap, int maxCompCa
       if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
     }
     comm->algoEnable[NCCL_ALGO_COLLNET] = 0;
+    comm->algoEnable[NCCL_ALGO_RING] = 1;
   }
   return ncclSuccess;
 }

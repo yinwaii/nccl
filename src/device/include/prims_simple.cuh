@@ -1,5 +1,6 @@
 #ifndef NCCL_PRIMS_SIMPLE_H_
 #define NCCL_PRIMS_SIMPLE_H_
+#include "primitives.cuh"
 // Implementation of primitive types
 template <typename T, typename RedOp, typename Fan, int Direct,
           int SlicePerChunk, int StepPerSlice, int Unroll>
