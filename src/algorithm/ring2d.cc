@@ -10,7 +10,7 @@ ncclResult_t ncclTopoRing2D::topoPreset(struct ncclTopoRanks *topoRanks) {
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
 
-  intraRanks = new int[localRanks * MAXCHANNELS];
+  NCCLCHECK(ncclCalloc(&intraRanks, localRanks * MAXCHANNELS));
 
   for (int c = 0; c < nChannels; c++) {
     struct ncclChannel *channel = comm->channels + c;
@@ -40,7 +40,7 @@ ncclResult_t ncclTopoRing2D::topoPostset(int *firstRanks, struct ncclTopoRanks *
   if (nRanks != nNodes * localRanks)
     return ncclInvalidUsage;
 
-  interRanks = new int[nNodes * MAXCHANNELS];
+  NCCLCHECK(ncclCalloc(&interRanks, nNodes * MAXCHANNELS));
 
   for (int c = 0; c < nChannels; c++) {
     int localRank = allTopoRanks[comm->rank]->internalRank[c];
@@ -68,11 +68,18 @@ ncclResult_t ncclTopoRing2D::topoPostset(int *firstRanks, struct ncclTopoRanks *
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoRing2D::topoDuplicate(int c) { 
+  memcpy(intraRanks + c * comm->localRanks, intraRanks + (c-comm->nChannels) * comm->localRanks, comm->localRanks * sizeof(int));
+  memcpy(interRanks + c * comm->nNodes, interRanks + (c-comm->nChannels)*comm->nNodes, comm->nNodes * sizeof(int));
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoRing2D::transportSetup() {
   int nNodes = comm->nNodes;
-	char line[1024] = "";
-	sprintf(line + strlen(line), "2D Ring for %d\n", comm->rank);
   for (int c = 0; c < comm->nChannels; c++) {
+    char line[1024] = "";
+
+	  sprintf(line + strlen(line), "2D Ring for %d %d\n", comm->rank, c);
     struct ncclChannel *channel = comm->channels + c;
 
 		if (comm->localRanks > 1)
@@ -100,10 +107,11 @@ ncclResult_t ncclTopoRing2D::transportSetup() {
     sprintf(line + strlen(line), "nIntra: %d nPeer %d\n", channel->ring2d.nIntraRanks, channel->ring2d.nInterRanks);
 		sprintf(line + strlen(line), "Ring: %d -> %d -> %d\n", channel->ring2d.intra_prev, comm->rank, channel->ring2d.intra_next);
     sprintf(line + strlen(line), "Ring: %d -> %d -> %d\n", channel->ring2d.inter_prev, comm->rank, channel->ring2d.inter_next);
+
+    INFO(NCCL_COLL, "%s", line);
   }
-  delete[] interRanks;
-  delete[] intraRanks;
-  INFO(NCCL_COLL, "%s", line);
+  free(interRanks);
+  free(intraRanks);
   return ncclSuccess;
 }
 

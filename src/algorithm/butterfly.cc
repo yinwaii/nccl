@@ -9,7 +9,7 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank, nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
-  peerRanks = new int[log2i(nranks) * MAXCHANNELS];
+  NCCLCHECK(ncclCalloc(&peerRanks, log2i(nranks) * MAXCHANNELS));
 
   for (int c = 0; c < nChannels; c++) {
     struct ncclChannel *channel = comm->channels + c;
@@ -28,6 +28,11 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
 }
 
 ncclResult_t ncclTopoButterfly::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoButterfly::topoDuplicate(int c) {
+  memcpy(peerRanks + c * log2i(comm->nRanks), peerRanks + (c - comm->nChannels) * log2i(comm->nRanks), log2i(comm->nRanks) * sizeof(int));
   return ncclSuccess;
 }
 
@@ -55,7 +60,7 @@ ncclResult_t ncclTopoButterfly::transportSetup() {
     }
     sprintf(line + strlen(line), "\n");
   }
-  delete[] peerRanks;
+  free(peerRanks);
   INFO(NCCL_COLL, "%s", line);
   return ncclSuccess;
 }

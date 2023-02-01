@@ -11,8 +11,8 @@ public:
   int *peerRanks;
   ncclTopoButterfly(struct ncclComm *comm);
   ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
-  ncclResult_t topoPostset(int *firstRanks,
-                           struct ncclTopoRanks **allTopoRanks);
+  ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);
+  ncclResult_t topoDuplicate(int channel);
   ncclResult_t transportSetup();
 };
 

@@ -18,6 +18,7 @@ public:
   ncclResult_t graphFit(struct ncclGraphInfo *src);
   virtual ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks) = 0;
   virtual ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) = 0;
+  virtual ncclResult_t topoDuplicate(int channel);
   virtual ncclResult_t transportSetup() = 0;
   virtual ~ncclTopoBase() {}
 };

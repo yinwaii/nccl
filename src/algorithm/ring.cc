@@ -160,6 +160,11 @@ ncclResult_t ncclTopoRing::setupChannel(int channelId, int rank, int nranks, int
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoRing::topoDuplicate(int c) {
+  memcpy(rings + c * comm->nRanks, rings + (c - comm->nChannels) * comm->nRanks, comm->nRanks * sizeof(int));
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoRing::transportSetup() {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;

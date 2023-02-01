@@ -10,7 +10,6 @@ private:
 	ncclResult_t connectButterfly(struct ncclComm *comm, int *butterflyRecv, int *butterflySend, int *firstRanks);
 
 public:
-	int *peerRanks;
 	ncclTopoButterfly_yz(struct ncclComm *comm);
 	ncclResult_t topoPreset(struct ncclTopoRanks *topoRanks);
 	ncclResult_t topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks);

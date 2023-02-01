@@ -11,6 +11,7 @@
 #include "butterfly2d.h"
 #include "ring2d.h"
 #include "comm.h"
+#include "alloc.h"
 #include "../graph/topo.h"
 #include "../graph/tuning.h"
 

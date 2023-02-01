@@ -34,6 +34,10 @@ ncclResult_t ncclTopoBase::graphFit(struct ncclGraphInfo* src) {
 	return ncclSuccess;
 }
 
+ncclResult_t ncclTopoBase::topoDuplicate(int channel) {
+  return ncclSuccess;
+}
+
 // Enqueue
 
 ncclResult_t ncclEnqueueBase::getPattern(int coll, int *pattern) const {
