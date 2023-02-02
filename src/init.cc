@@ -502,6 +502,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(algos[a]->graphCopy(allGather3Data[rank].graphInfos + a));
   }
 
+  NCCLCHECK(ncclTopoEnable(comm));
+
   NCCLCHECK(ncclTopoPreset(comm, algos, &allGather3Data[rank].topoRanks));
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
@@ -530,8 +532,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
     maxCompCap = std::max(allGather3Data[i].cudaCompCap, maxCompCap);
   }
-
-  NCCLCHECK(ncclTopoEnable(comm, minCompCap, maxCompCap));
 
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;

@@ -14,13 +14,11 @@ ncclResult_t ncclEnqueueButterfly2::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueButterfly2::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
+ncclResult_t ncclEnqueueButterfly2::enqueueRedirect(struct ncclInfo *info) const {
   if (info->coll == ncclCollBroadcast) {
-    info->algorithm = NCCL_ALGO_BUTTERFLY_YZ;
-    *redirect = true;
-    return ncclSuccess;
+    info->comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
+    info->comm->algoEnable[NCCL_ALGO_BUTTERFLY2] = 0;
   }
-  NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }
 

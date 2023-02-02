@@ -268,7 +268,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float time;
       NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time));
-      if (time >= 0 && time < minTime) {
+      if (info->comm->algoEnable[a] > 0 && time >= 0 && time < minTime) {
         info->algorithm = a;
         info->protocol = p;
         minTime = time;
@@ -301,12 +301,12 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     return ncclSuccess;
   }
 
+  NCCLCHECK(ncclTopoEnable(info->comm));
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+    NCCLCHECK(ncclAlgos[a]->enqueueRedirect(info));
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
-  bool redirect = true;
-  while (redirect) {
-    NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info, &redirect));
-  }
+  NCCLCHECK(ncclAlgos[info->algorithm]->enqueuePattern(info));
   NCCLCHECK(ncclAlgos[info->algorithm]->enqueueLoopInfo(info));
 
   coll->args.coll.root = info->root;

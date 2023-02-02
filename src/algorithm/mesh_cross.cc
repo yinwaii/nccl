@@ -32,7 +32,8 @@ ncclResult_t ncclTopoMeshCross::topoPreset(struct ncclTopoRanks *topoRanks) {
 		TRACE(NCCL_GRAPH, "Mesh %d(%d,%d)-%d: %d(up) -> %d(left) -> %d(mirror) -> %d(right) -> %d(down)", comm->rank, row, col, c, channel->meshCross.inter_prev, channel->meshCross.intra_prev, channel->meshCross.mirror, channel->meshCross.intra_next, channel->meshCross.inter_next);
   }
 
-  comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
+  if (comm->algoEnable[NCCL_ALGO_MESH_CROSS] == 1)
+    comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
   return ncclSuccess;
 }
 
@@ -86,13 +87,11 @@ ncclResult_t ncclEnqueueMeshCross::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueMeshCross::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
+ncclResult_t ncclEnqueueMeshCross::enqueueRedirect(struct ncclInfo *info) const {
   if (info->coll == ncclCollBroadcast) {
-    info->algorithm = NCCL_ALGO_BUTTERFLY_YZ;
-    *redirect = true;
-    return ncclSuccess;
+    info->comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
+    info->comm->algoEnable[NCCL_ALGO_MESH_CROSS] = 0;
   }
-  NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }
 

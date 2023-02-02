@@ -21,7 +21,7 @@ private:
 public:
   ncclEnqueueMeshCross() : ncclEnqueueBase("MeshCross") {}
   ncclResult_t getPattern(int coll, int *pattern) const;
-  ncclResult_t enqueuePattern(struct ncclInfo *info, bool *redirect) const;
+  ncclResult_t enqueueRedirect(struct ncclInfo *info) const;
   ncclResult_t enqueueLoopInfo(struct ncclInfo *info) const;
   ncclResult_t proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const;
 };

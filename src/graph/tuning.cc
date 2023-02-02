@@ -53,7 +53,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoEnable(struct ncclComm *comm, int minCompCap, int maxCompCap) {
+ncclResult_t ncclTopoEnable(struct ncclComm *comm) {
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   comm->protoEnable[NCCL_PROTO_LL] = 1;
@@ -88,7 +88,6 @@ ncclResult_t ncclTopoEnable(struct ncclComm *comm, int minCompCap, int maxCompCa
       if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
     }
     comm->algoEnable[NCCL_ALGO_COLLNET] = 0;
-    comm->algoEnable[NCCL_ALGO_RING] = 1;
   }
   return ncclSuccess;
 }

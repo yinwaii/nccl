@@ -28,7 +28,8 @@ ncclResult_t ncclTopoButterfly2D::topoPreset(struct ncclTopoRanks *topoRanks) {
     }
   }
 
-  comm->algoEnable[NCCL_ALGO_RING] = 1;
+  if (comm->algoEnable[NCCL_ALGO_BUTTERFLY_2D] == 1)
+    comm->algoEnable[NCCL_ALGO_RING] = 1;
 
   return ncclSuccess;
 }
@@ -136,13 +137,11 @@ ncclResult_t ncclEnqueueButterfly2D::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueButterfly2D::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
+ncclResult_t ncclEnqueueButterfly2D::enqueueRedirect(struct ncclInfo *info) const {
   if (info->coll == ncclCollBroadcast) {
-    info->algorithm = NCCL_ALGO_RING;
-    *redirect = true;
-    return ncclSuccess;
+    info->comm->algoEnable[NCCL_ALGO_RING] = 1;
+    info->comm->algoEnable[NCCL_ALGO_BUTTERFLY_2D] = 0;
   }
-  NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }
 

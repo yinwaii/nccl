@@ -9,6 +9,8 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank, nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
+  WARN("xxx s1");
+
   NCCLCHECK(ncclCalloc(&peerRanks, log2i(nranks) * MAXCHANNELS));
 
   for (int c = 0; c < nChannels; c++) {
@@ -22,7 +24,10 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
     }
   }
 
-  comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
+  WARN("xxx s2");
+
+  if (comm->algoEnable[NCCL_ALGO_BUTTERFLY] == 1 || comm->algoEnable[NCCL_ALGO_BUTTERFLY2] == 1)
+    comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
 
   return ncclSuccess;
 }
@@ -79,13 +84,11 @@ ncclResult_t ncclEnqueueButterfly::getPattern(int coll, int *pattern) const {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueButterfly::enqueuePattern(struct ncclInfo *info, bool *redirect) const {
+ncclResult_t ncclEnqueueButterfly::enqueueRedirect(struct ncclInfo *info) const {
   if (info->coll == ncclCollBroadcast) {
-    info->algorithm = NCCL_ALGO_BUTTERFLY_YZ;
-    *redirect = true;
-    return ncclSuccess;
+    info->comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;
+    info->comm->algoEnable[NCCL_ALGO_BUTTERFLY] = 0;
   }
-  NCCLCHECK(this->ncclEnqueueBase::enqueuePattern(info, redirect));
   return ncclSuccess;
 }
 
