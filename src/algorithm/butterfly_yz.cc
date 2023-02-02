@@ -8,7 +8,6 @@ ncclTopoButterfly_yz::ncclTopoButterfly_yz(struct ncclComm *comm): ncclTopoBase(
 
 ncclResult_t ncclTopoButterfly_yz::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank, nranks = comm->nRanks;
-  WARN("xxx Preset");
   int localRanks = comm->localRanks;
   int nChannels = comm->nChannels;
 
@@ -103,7 +102,6 @@ ncclResult_t ncclTopoButterfly_yz::connectButterfly(struct ncclComm* comm, int* 
 }
 
 ncclResult_t ncclTopoButterfly_yz::topoPostset(int *firstRanks, struct ncclTopoRanks **allTopoRanks) {
-  WARN("xxx Postset");
   // Gather data from all ranks
   int *butterflyRecv, *butterflySend;
   int nranks = comm->nRanks;
@@ -125,7 +123,6 @@ ncclResult_t ncclTopoButterfly_yz::topoPostset(int *firstRanks, struct ncclTopoR
 }
 
 ncclResult_t ncclTopoButterfly_yz::transportSetup() {
-  WARN("xxx Transport");
   INFO(NCCL_INIT, "Setting up butterfly_yz connection ...");
   for (int c=0; c<comm->nChannels; c++) {
 	struct ncclChannel* channel = comm->channels+c;
@@ -156,7 +153,6 @@ ncclResult_t ncclEnqueueButterfly_yz::getPattern(int coll, int *pattern) const {
 }
 
 ncclResult_t ncclEnqueueButterfly_yz::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo* info) const {
-  WARN("xxx Save");
   int pattern = info->pattern;
   struct ncclButterfly_yz *butterfly_yz = &args->channel->butterfly_yz;
   int nRanks = info->comm->nRanks;
