@@ -21,7 +21,7 @@ public:
 class ncclEnqueueButterfly2D : public ncclEnqueueBase {
 private:
   enum Patterns { ncclPatternButterfly2D, ncclPatternBroadcast };
-	int getNsteps(struct ncclProxyArgs *args, struct ncclInfo *info, size_t size) const;
+	int getNsteps(struct ncclProxyArgs *args, struct ncclInfo *info, size_t size, int nstepsPerLoop = 1) const;
 
 public:
   ncclEnqueueButterfly2D() : ncclEnqueueBase("Butterfly2D") {}

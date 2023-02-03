@@ -145,7 +145,7 @@ ncclResult_t ncclEnqueueButterfly2D::enqueueRedirect(struct ncclInfo *info) cons
   return ncclSuccess;
 }
 
-int ncclEnqueueButterfly2D::getNsteps(struct ncclProxyArgs *args, struct ncclInfo *info, size_t size) const {
+int ncclEnqueueButterfly2D::getNsteps(struct ncclProxyArgs *args, struct ncclInfo *info, size_t size, int nstepsPerLoop) const {
   // Compute nSteps for proxies
   int stepSize = info->comm->buffSizes[info->protocol] / NCCL_STEPS;
   int chunkEffectiveSize = stepSize * args->chunkSteps;
@@ -156,8 +156,8 @@ int ncclEnqueueButterfly2D::getNsteps(struct ncclProxyArgs *args, struct ncclInf
   // if (info->comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d
   // (algo %d proto%d)\n", info->coll, info->nBytes, info->nChannels,
   // info->nThreads, chunkSize, info->algorithm, info->protocol);
-  int nLoops = 2 * (int)(DIVUP(size / 2, (((size_t)(info->nChannels)) * info->nchunksPerLoop * chunkEffectiveSize)));
-  return info->nstepsPerLoop * nLoops * args->chunkSteps;
+  int nLoops = (int)(DIVUP(size, (((size_t)(info->nChannels)) * info->nchunksPerLoop * chunkEffectiveSize)));
+  return nstepsPerLoop * nLoops * args->chunkSteps;
 }
 
 ncclResult_t ncclEnqueueButterfly2D::proxySaveColl(struct ncclProxyArgs *args, struct ncclInfo *info) const {
@@ -170,12 +170,13 @@ ncclResult_t ncclEnqueueButterfly2D::proxySaveColl(struct ncclProxyArgs *args, s
 			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->intra_prev, args));
 		}
 		if (butterfly2d->edgeRank != -1) {
-			NCCLCHECK(SaveProxy<proxySend>(butterfly2d->edgeRank, args));
-			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->edgeRank, args));
+      int nsteps = getNsteps(args, info, info->nBytes, 1);
+			NCCLCHECK(SaveProxy<proxySend>(butterfly2d->edgeRank, args, nsteps));
+			NCCLCHECK(SaveProxy<proxyRecv>(butterfly2d->edgeRank, args, nsteps));
 		}
 		for (int i = 0; i < log2i(info->comm->nNodes); i++) {
 			int peer = butterfly2d->peerRanks[i];
-			int nsteps = getNsteps(args, info, (info->nBytes >> i));
+			int nsteps = 2 * getNsteps(args, info, (info->nBytes >> i) / 2, 1);
 			NCCLCHECK(SaveProxy<proxySend>(peer, args, nsteps));
       NCCLCHECK(SaveProxy<proxyRecv>(peer, args, nsteps));
 		}
@@ -186,8 +187,8 @@ ncclResult_t ncclEnqueueButterfly2D::proxySaveColl(struct ncclProxyArgs *args, s
 ncclResult_t ncclEnqueueButterfly2D::enqueueLoopInfo(struct ncclInfo *info) const {
   switch (info->pattern) {
   case ncclPatternButterfly2D:
-    info->nchunksPerLoop = 1;
-    info->nstepsPerLoop = 1;
+    info->nchunksPerLoop = info->comm->localRanks;
+    info->nstepsPerLoop = info->comm->localRanks - 1;
     break;
   default:
     WARN("Unknown pattern %d\n", info->pattern);
