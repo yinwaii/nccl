@@ -48,8 +48,8 @@ namespace {
 				return gridOffset + (chunk*nChannels + bid)*realChunkSize;
 		};
 
-    if (tid == 0)
-      printf("Step 1: Intra-node reducescatter\n");
+    // if (tid == 0)
+    //   printf("Step 1: Intra-node reducescatter\n");
     if (butterfly->nIntraRanks > 1) {
       Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> primIntra(tid, nthreads, &butterfly->intra_prev, &butterfly->intra_next, thisOutput, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -85,8 +85,8 @@ namespace {
       }
     }
 
-    if (tid == 0)
-      printf("Step 2: Inter-node allreduce\n");
+    // if (tid == 0)
+    //   printf("Step 2: Inter-node allreduce\n");
 
     int edgeRank = butterfly->edgeRank;
 
@@ -189,8 +189,8 @@ namespace {
       }
     }
 
-    if (tid == 0)
-      printf("Step 3: Intra-node allgather\n");
+    // if (tid == 0)
+    //   printf("Step 3: Intra-node allgather\n");
 
     if (butterfly->nIntraRanks > 1) {
       Primitives<T, RedOp, FanSymmetric<1>, 1, Proto> primIntra(tid, nthreads, &butterfly->intra_prev, &butterfly->intra_next, thisOutput, channel, comm);
