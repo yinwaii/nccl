@@ -7,6 +7,9 @@
 #include "comm.h"
 #include "net.h"
 #include "graph.h"
+#if defined(ENABLE_NPKIT)
+#include "npkit/npkit.h"
+#endif
 
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
@@ -217,8 +220,17 @@ ncclResult_t netRecvFree(void* transportResources) {
   return ncclSuccess;
 }
 
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+static int g_npkit_net_poll_cnt = 0;
+#endif
+
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
+  
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+  g_npkit_net_poll_cnt++;
+#endif
+
   if (args->state == ncclProxyOpReady) {
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -245,6 +257,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         if (args->protocol == NCCL_PROTO_LL128) {
           if (args->tail < *recvTail) {
             if (sizesFifo[buffSlot] != -1) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_SEND_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_SEND_EXIT)
+          args->npKitSizesFifo[buffSlot] = sizesFifo[buffSlot];
+#endif
               int ready = resources->useGdr;
               if (!ready) {
                 // When data is in sysmem, we need to wait until all flags are correct since the GPU only
@@ -299,6 +314,20 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           if (sizesFifo[buffSlot] != -1) {
             NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], mhandle, args->requests+buffSlot));
             if (args->requests[buffSlot] != NULL) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_SEND_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_SEND_EXIT)
+              NpKit::CollectCpuEvent(
+                  NPKIT_EVENT_NET_SEND_ENTRY,
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+                  g_npkit_net_poll_cnt,
+#else
+                  sizesFifo[buffSlot],
+#endif
+                  uint64_t(args->requests+buffSlot)/sizeof(void*),
+                  *(volatile uint64_t*)NpKit::GetCpuTimestamp(), args->channel->id);
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+              g_npkit_net_poll_cnt = 0;
+#endif
+#endif
               sizesFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
               __sync_synchronize();
@@ -313,6 +342,20 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         int buffSlot = args->head%NCCL_STEPS;
         NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
         if (done) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_SEND_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_SEND_EXIT)
+          NpKit::CollectCpuEvent(
+              NPKIT_EVENT_NET_SEND_EXIT,
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+              g_npkit_net_poll_cnt,
+#else
+              args->npKitSizesFifo[buffSlot],
+#endif
+              uint64_t(args->requests+buffSlot)/sizeof(void*),
+              *(volatile uint64_t*)NpKit::GetCpuTimestamp(), args->channel->id);
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+          g_npkit_net_poll_cnt = 0;
+#endif
+#endif
           args->head += args->sliceSteps;
           resources->sendMem->head = args->head;
           args->idle = 0;
@@ -330,6 +373,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
 
 ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   struct netRecvResources* resources = (struct netRecvResources*) (args->connector->transportResources);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+  g_npkit_net_poll_cnt++;
+#endif
   if (args->state == ncclProxyOpReady) {
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -355,6 +401,20 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         int sliceSize = stepSize * args->sliceSteps;
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));
         if (args->requests[buffSlot] != NULL) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_RECV_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_RECV_EXIT)
+          NpKit::CollectCpuEvent(
+              NPKIT_EVENT_NET_RECV_ENTRY,
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+              g_npkit_net_poll_cnt,
+#else
+              sliceSize,
+#endif
+              uint64_t(args->requests+buffSlot)/sizeof(void*),
+              *(volatile uint64_t*)NpKit::GetCpuTimestamp(), args->channel->id);
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+          g_npkit_net_poll_cnt = 0;
+#endif
+#endif
           args->tail += args->sliceSteps;
           args->idle = 0;
         }
@@ -364,6 +424,20 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         int done, size;
         NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
         if (done) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_RECV_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_RECV_EXIT)
+          NpKit::CollectCpuEvent(
+              NPKIT_EVENT_NET_RECV_EXIT,
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+              g_npkit_net_poll_cnt,
+#else
+              size,
+#endif
+              uint64_t(args->requests+buffSlot)/sizeof(void*),
+              *(volatile uint64_t*)NpKit::GetCpuTimestamp(), args->channel->id);
+#if defined(ENABLE_NPKIT_NET_COLLECT_POLL_CNT)
+          g_npkit_net_poll_cnt = 0;
+#endif
+#endif
           args->head += args->sliceSteps;
           if (args->protocol == NCCL_PROTO_SIMPLE) {
             if (resources->useGdr) NCCLCHECK(ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size, mhandle));

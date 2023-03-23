@@ -38,6 +38,11 @@ struct ncclProxyArgs {
   pthread_mutex_t mutex;
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
+
+  
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_SEND_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_SEND_EXIT)
+  int npKitSizesFifo[NCCL_STEPS];
+#endif
 };
 
 struct ncclProxyPool;

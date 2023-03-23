@@ -17,6 +17,9 @@
 #include "enqueue.h"
 #include "graph.h"
 #include "argcheck.h"
+#if defined(ENABLE_NPKIT)
+#include "npkit/npkit.h"
+#endif
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -268,6 +271,13 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring2d.devIntraRanks, comm->channels[r].ring2d.intraRanks, comm->localRanks));
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring2d.devInterRanks, comm->channels[r].ring2d.interRanks, comm->nNodes));
   }
+
+#if defined(ENABLE_NPKIT)
+  // Init NPKit
+  NCCLCHECK(NpKit::Init(comm->rank));
+  comm->hostDevComm.npKitEventCollectContexts = NpKit::GetGpuEventCollectContexts();
+  comm->hostDevComm.cpuTimestamp = NpKit::GetCpuTimestamp();
+#endif
 
   // Duplicate the dev comm on the device
   NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
@@ -733,6 +743,17 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
     CUDACHECK(cudaSetDevice(savedDevice));
 
   TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, rank);
+
+#if defined(ENABLE_NPKIT)
+  // Dump NPKit events and shutdown
+  const char* npkitDumpDir = getenv("NPKIT_DUMP_DIR");
+  if (npkitDumpDir == nullptr) {
+    WARN("NPKIT_DUMP_DIR is empty");
+  } else {
+    NCCLCHECK(NpKit::Dump(npkitDumpDir));
+  }
+  NCCLCHECK(NpKit::Shutdown());
+#endif
 
   return ncclSuccess;
 }

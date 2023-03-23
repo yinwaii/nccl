@@ -9,6 +9,9 @@
 #include "collectives.h"
 #include "devcomm.h"
 #include "primitives.cuh"
+#if defined(ENABLE_NPKIT)
+#include "npkit/npkit.h"
+#endif
 
 namespace {
   template<typename T, typename RedOp, typename Proto>
@@ -28,6 +31,32 @@ namespace {
     const ssize_t loopSize = int(nChannels*chunkSize);
     const ssize_t size = args->coll.count;
 
+#if defined(ENABLE_NPKIT)
+    int npKitCtxIdx = bid;
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_TIME_SYNC_CPU)
+    if (tid == 0) {
+      uint64_t* cpuTimestamp = comm->cpuTimestamp;
+      NpKit::CollectGpuEvent(NPKIT_EVENT_TIME_SYNC_CPU, 0, 0, *cpuTimestamp,
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_TIME_SYNC_GPU)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_TIME_SYNC_GPU, 0, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_ENTRY, size*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
     if (loopSize > size)
       chunkSize = DIVUP((int)size, int(nChannels*minChunkSize))*int(minChunkSize);
 
@@ -40,6 +69,21 @@ namespace {
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_TREE_ARITY, 1>, 0, Proto>
         primsUp(tid, nthreads, tree->down, &tree->up, NULL, channel, comm);
+
+#if defined(ENABLE_NPKIT)
+      if (tid == 0) {
+        primsUp.npKitCtxIdx = npKitCtxIdx;
+      }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_REDUCE_ENTRY)
+      if (tid == 0) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_REDUCE_ENTRY, size*sizeof(T), 0, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+        prims.npKitDataProcessTotalTime = 0;
+      }
+#endif
+
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -52,12 +96,33 @@ namespace {
           primsUp.recvReduceSend(thisInput+offset, nelem);
       }
     }
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_REDUCE_EXIT)
+      if (tid == 0) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_REDUCE_EXIT, size*sizeof(T), prims.npKitDataProcessTotalTime, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+      }
+#endif
 
     {
       struct ncclTree* tree = &channel->treeDn;
       // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
       Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_TREE_ARITY>, 1, Proto>
         primsDn(tid, nthreads, &tree->up, tree->down, thisOutput, channel, comm);
+
+#if defined(ENABLE_NPKIT)
+      if (tid == 0) {
+        primsDn.npKitCtxIdx = npKitCtxIdx;
+      }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_BROADCAST_ENTRY)
+      if (tid == 0) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_BROADCAST_ENTRY, size*sizeof(T), 0, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+        prims.npKitDataProcessTotalTime = 0;
+      }
+#endif
+
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -70,6 +135,20 @@ namespace {
           primsDn.directRecvCopySend(thisOutput+offset, offset, nelem);
       }
     }
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_BROADCAST_EXIT)
+      if (tid == 0) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_BROADCAST_EXIT, size*sizeof(T), prims.npKitDataProcessTotalTime, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+      }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_EXIT)
+      if (tid == 0) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_UPDOWN_EXIT, size*sizeof(T), 0, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+      }
+#endif
   }
 
   template<typename T, typename RedOp, typename Proto>
@@ -102,6 +181,40 @@ namespace {
       nthreadsSplit = (nthreads*7/(10*WARP_SIZE))*WARP_SIZE;
     }
 
+#if defined(ENABLE_NPKIT)
+    bool isNpKitThread = false;
+    int npKitCtxIdx = 0;
+    if (threadIdx.x == 0) {
+      isNpKitThread = true;
+      npKitCtxIdx = bid * 2;
+    } else if (treeUp->up != -1 && threadIdx.x == nthreadsSplit) {
+      isNpKitThread = true;
+      npKitCtxIdx = bid * 2 + 1;
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_TIME_SYNC_CPU)
+    if (isNpKitThread) {
+      uint64_t* cpuTimestamp = comm->cpuTimestamp;
+      NpKit::CollectGpuEvent(NPKIT_EVENT_TIME_SYNC_CPU, 0, 0, *cpuTimestamp,
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_TIME_SYNC_GPU)
+    if (isNpKitThread) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_TIME_SYNC_GPU, 0, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_ENTRY)
+    if (isNpKitThread) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_ENTRY, size*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
     if (loopSize > size)
       chunkSize = DIVUP((int)size, int(nChannels*minChunkSize))*int(minChunkSize);
 
@@ -113,11 +226,34 @@ namespace {
       // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_TREE_ARITY, NCCL_MAX_TREE_ARITY>, 1, Proto> 
         prims(tid, nthreads, treeUp->down, treeDn->down, NULL, channel, comm);
+
+#if defined(ENABLE_NPKIT)
+      if (isNpKitThread) {
+        prims.npKitCtxIdx = npKitCtxIdx;
+      }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_BROADCAST_ENTRY)
+      if (isNpKitThread) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_BROADCAST_ENTRY, size*sizeof(T), 0, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+        prims.npKitDataProcessTotalTime = 0;
+      }
+#endif
+
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*chunkSize;
         int nelem = min(chunkSize, size-offset);
         prims.directRecvReduceCopySend(thisInput+offset, thisOutput+offset, offset, nelem);
       }
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_BROADCAST_EXIT)
+      if (isNpKitThread) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_BROADCAST_EXIT, size*sizeof(T), prims.npKitDataProcessTotalTime, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+      }
+#endif
+
     } else {
       if (tid < nthreadsSplit) {
         // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
@@ -130,6 +266,21 @@ namespace {
 
         Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_TREE_ARITY, 1>, 1, Proto> 
           prims(tid, nthreadsSplit, treeUp->down, &treeUp->up, NULL, channel, comm);
+
+#if defined(ENABLE_NPKIT)
+      if (isNpKitThread) {
+        prims.npKitCtxIdx = npKitCtxIdx;
+      }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_ENTRY)
+      if (isNpKitThread) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_ENTRY, size*sizeof(T), 0, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+        prims.npKitDataProcessTotalTime = 0;
+      }
+#endif
+
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           // Up
           ssize_t offset = gridOffset + bid*chunkSize;
@@ -140,10 +291,33 @@ namespace {
             prims.recvReduceSend(thisInput+offset, nelem);
           }
         }
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_EXIT)
+      if (isNpKitThread) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_REDUCE_EXIT, size*sizeof(T), prims.npKitDataProcessTotalTime, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+      }
+#endif
+
       } else {
         // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
         Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_TREE_ARITY>, 1, Proto>
           prims(tid-nthreadsSplit, nthreads-nthreadsSplit, &treeDn->up, treeDn->down, thisOutput, channel, comm);
+
+#if defined(ENABLE_NPKIT)
+      if (isNpKitThread) {
+        prims.npKitCtxIdx = npKitCtxIdx;
+      }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_BROADCAST_ENTRY)
+      if (isNpKitThread) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_BROADCAST_ENTRY, size*sizeof(T), 0, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
+        prims.npKitDataProcessTotalTime = 0;
+      }
+#endif
+
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           // Down
           ssize_t offset = gridOffset + bid*chunkSize;
@@ -154,7 +328,23 @@ namespace {
             prims.directRecvCopySend(thisOutput+offset, offset, nelem);
           }
         }
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_BROADCAST_EXIT)
+      if (isNpKitThread) {
+        NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_BROADCAST_EXIT, size*sizeof(T), prims.npKitDataProcessTotalTime, clock64(),
+            comm->npKitEventCollectContexts + npKitCtxIdx);
       }
+#endif
+
+      }
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_EXIT)
+    if (isNpKitThread) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_ALL_REDUCE_TREE_SPLIT_EXIT, size*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
     }
   }
 }

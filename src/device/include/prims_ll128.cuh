@@ -8,6 +8,9 @@
 #define NCCL_PRIMS_LL128_H_
 
 #include "op128.cuh"
+#if defined(ENABLE_NPKIT)
+#include "npkit/npkit.h"
+#endif
 
 #define NCCL_LL128_FLAGTHREAD (NCCL_LL128_LINEELEMS-1)
 
@@ -43,6 +46,23 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
   uint64_t* sendBuff[MaxSend];
   struct ncclDevComm* comm;
 
+#if defined(ENABLE_NPKIT)
+public:
+  int npKitCtxIdx = 0;
+  uint64_t npKitDataProcessEntryTime = 0;
+  uint64_t npKitDataProcessExitTime = 0;
+  uint64_t npKitDataProcessTotalTime = 0;
+private:
+#endif
+
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+  uint64_t npKitWaitRecvDataProcessSize = 0;
+  uint64_t npKitWaitRecvEntryTime = 0;
+  uint64_t npKitWaitRecvExitTime = 0;
+  uint64_t npKitWaitRecvTotalTime = 0;
+#endif
+
+
   volatile uint64_t* shmem;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
@@ -73,6 +93,12 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
   }
 
   inline __device__ void waitSend(int nbytes) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_WAIT_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_LL128_WAIT_SEND_ENTRY, nbytes, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     spins = 0;
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
@@ -84,6 +110,12 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
       }
       sendConnHead += 1;
     }
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_WAIT_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_LL128_WAIT_SEND_EXIT, nbytes, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   inline __device__ void incRecv(int i) {
@@ -177,6 +209,14 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
       uint64_t* ptr = recvPtr(0)+ll128Offset;
       bool needReload;
       uint64_t v0, v1;
+
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+      int npkitWaitRecvSpins = 0;
+      if (tid == 0) {
+        npKitWaitRecvEntryTime = clock64();
+      }
+#endif
+
       do {
         needReload = false;
         #pragma unroll
@@ -184,7 +224,19 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
           load128(ptr+u*WARP_SIZE, v0, v1);
           needReload |= flagThread && (v1 != flag);
         }
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+        npkitWaitRecvSpins++;
+#endif
       } while (__any_sync(WARP_MASK, needReload) && checkAbort(0, 0) == 0);
+
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+      if (tid == 0) {
+        npKitWaitRecvExitTime = clock64();
+        npKitWaitRecvTotalTime += (npKitWaitRecvExitTime - npKitWaitRecvEntryTime) * (npkitWaitRecvSpins - 1) / npkitWaitRecvSpins;
+        npkitWaitRecvSpins = 0;
+      }
+#endif
+
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         load128(ptr+u*WARP_SIZE, v0, v1);
@@ -196,6 +248,14 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
         uint64_t flag = recvFlag(i);
         uint64_t* ptr = recvPtr(i)+ll128Offset;
         uint64_t v0, v1;
+
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+        int npkitWaitRecvSpins = 0;
+        if (tid == 0) {
+          npKitWaitRecvEntryTime = clock64();
+        }
+#endif
+
         do {
           needReload = false;
           #pragma unroll
@@ -203,7 +263,18 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
             load128(ptr+u*WARP_SIZE, v0, v1);
             needReload |= flagThread && (v1 != flag);
           }
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+          npkitWaitRecvSpins++;
+#endif
         } while (__any_sync(WARP_MASK, needReload) && checkAbort(i, 0) == 0);
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+        if (tid == 0) {
+          npKitWaitRecvExitTime = clock64();
+          npKitWaitRecvTotalTime += (npKitWaitRecvExitTime - npKitWaitRecvEntryTime) * (npkitWaitRecvSpins - 1) / npkitWaitRecvSpins;
+          npkitWaitRecvSpins = 0;
+        }
+#endif
+
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           load128(ptr+u*WARP_SIZE, v0, v1);
@@ -268,6 +339,24 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
     if (SEND) waitSend(DIVUP(nelem*sizeof(T), ELEMINC*sizeof(uint64_t))*LL128INC*sizeof(uint64_t));
     barrier();
 
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT)
+    if (tid == 0) {
+      npKitWaitRecvTotalTime = 0;
+      npKitWaitRecvDataProcessSize = nelem*sizeof(T);
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY,
+          npKitWaitRecvDataProcessSize, 0, clock64(), comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
+    if (tid == 0) {
+      npKitWaitRecvTotalTime = 0;
+      npKitDataProcessEntryTime = clock64();
+    }
+#endif
+
+
     while (elemOffset*(sizeof(uint64_t)/sizeof(T)) < nelem) {
       const int maxOffset128 = min(nelem64-elemOffset, (int)ELEMINC);
       const int maxOffset = min(nelem-(elemOffset*((int)(sizeof(uint64_t)/sizeof(T)))), (int)(ELEMINC*(sizeof(uint64_t)/sizeof(T))));
@@ -296,6 +385,22 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
     }
 
     barrier();
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME)
+    if (tid == 0) {
+      npKitDataProcessExitTime = clock64();
+      npKitDataProcessTotalTime += npKitDataProcessExitTime - npKitDataProcessEntryTime - npKitWaitRecvTotalTime;
+    }
+#endif
+
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_LL128_DATA_PROCESS_EXIT,
+          npKitWaitRecvDataProcessSize, npKitWaitRecvTotalTime, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
+
     FOR_SEND(incSend); if (SEND) postSend();
     FOR_RECV(incRecv); if (RECV) postRecv();
   }
@@ -362,31 +467,115 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
   }
 
   __device__ void send(const T* src, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<0, 1, 1, 0>(src, NULL, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ void recv(T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<1, 0, 0, 1>(NULL, dst, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ void recvReduceSend(const T* src, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<1, 1, 1, 0>(src, NULL, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ void recvReduceCopy(const T* src, T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<1, 0, 1, 1>(src, dst, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ void copySend(const T* src, T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<0, 1, 1, 1>(src, dst, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ void recvCopySend(T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<1, 1, 0, 1>(NULL, dst, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     return GenericOp<1, 1, 1, 1>(src, dst, nelem);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ ~Primitives() {
