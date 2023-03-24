@@ -41,6 +41,13 @@ public:
 private:
 #endif
 
+#if defined(ENABLE_NPKIT) && (defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_DATA_PROCESS_ENTRY) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_DATA_PROCESS_EXIT) || defined(ENABLE_NPKIT_PRIM_COLLECT_DATA_PROCESS_TIME))
+  uint64_t npKitWaitRecvDataProcessSize = 0;
+  uint64_t npKitWaitRecvEntryTime = 0;
+  uint64_t npKitWaitRecvExitTime = 0;
+  uint64_t npKitWaitRecvTotalTime = 0;
+#endif
+
   uint64_t recvStep[MaxRecv];
   uint64_t sendStep[MaxSend];
   const T* recvDirectBuff[MaxRecv];
@@ -82,6 +89,12 @@ private:
   }
 
   inline __device__ void waitSend(int nbytes) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_ENTRY, nbytes, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     spins = 0;
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + StepPerSlice) {
@@ -95,9 +108,21 @@ private:
       }
       sendConnHead += StepPerSlice;
     }
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_EXIT, nbytes, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   inline __device__ void waitRecv() {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_ENTRY, nbytes, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     spins = 0;
     if (recvConnTailPtr) {
       while (recvConnTailCache < recvConnTail + StepPerSlice) {
@@ -108,6 +133,12 @@ private:
       //printf("wait recv t:%d done\n",tid);
       recvConnTail += StepPerSlice;
     }
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_SIMPLE_WAIT_SEND_EXIT, nbytes, 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   inline __device__ void confirmSend() {
@@ -386,58 +417,202 @@ private:
 
   __device__ __forceinline__ void
   send(const T* src, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 0, 1, 1, 0>(src, NULL, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
   __device__ __forceinline__ void
   directSend(const T* src, ssize_t directOffset, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 1, 0, 1, 1, 0>(src, NULL, nelem, directOffset);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ void
   recv(T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 1, 0, 0, 1>(NULL, dst, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
   __device__ __forceinline__ void
   directRecv(T* dst, ssize_t directOffset, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_RECV_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_RECV_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<1, 0, 1, 0, 0, 1>(NULL, dst, nelem, directOffset);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_RECV_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_RECV_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ void
   copySend(const T* src, T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 0, 1, 1, 1>(src, dst, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
   __device__ __forceinline__ void
   directCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 1, 0, 1, 1, 1>(src, dst, nelem, directOffset);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ void
   recvCopySend(T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 1, 1, 0, 1>(NULL, dst, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
   __device__ __forceinline__ void
   directRecvCopySend(T* dst, ssize_t directOffset, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_RECV_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_RECV_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<1, 1, 1, 1, 0, 1>(NULL, dst, nelem, directOffset);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_RECV_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_RECV_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ void
   recvReduceCopy(const T* src, T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 1, 0, 1, 1>(src, dst, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ void
   recvReduceSend(const T* src, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 1, 1, 1, 0>(src, NULL, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ void
   recvReduceCopySend(const T* src, T* dst, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     GenericOp<0, 0, 1, 1, 1, 1>(src, dst, nelem, 0);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
   __device__ __forceinline__ void
   directRecvReduceCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_RECV_REDUCE_COPY_SEND_ENTRY)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_RECV_REDUCE_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
     // Direct is only for the send part
     GenericOp<0, 1, 1, 1, 1, 1>(src, dst, nelem, directOffset);
+#if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_DIRECT_RECV_REDUCE_COPY_SEND_EXIT)
+    if (tid == 0) {
+      NpKit::CollectGpuEvent(NPKIT_EVENT_DIRECT_RECV_REDUCE_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
+          comm->npKitEventCollectContexts + npKitCtxIdx);
+    }
+#endif
   }
 
   __device__ __forceinline__ ~Primitives() {

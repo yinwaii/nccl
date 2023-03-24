@@ -469,14 +469,14 @@ private:
   __device__ void send(const T* src, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_SEND_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<0, 1, 1, 0>(src, NULL, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_SEND_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
@@ -485,14 +485,14 @@ private:
   __device__ void recv(T* dst, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<1, 0, 0, 1>(NULL, dst, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
@@ -501,14 +501,14 @@ private:
   __device__ void recvReduceSend(const T* src, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<1, 1, 1, 0>(src, NULL, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_SEND_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
@@ -517,14 +517,14 @@ private:
   __device__ void recvReduceCopy(const T* src, T* dst, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<1, 0, 1, 1>(src, dst, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
@@ -533,14 +533,14 @@ private:
   __device__ void copySend(const T* src, T* dst, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_COPY_SEND_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<0, 1, 1, 1>(src, dst, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_COPY_SEND_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
@@ -549,14 +549,14 @@ private:
   __device__ void recvCopySend(T* dst, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_COPY_SEND_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<1, 1, 0, 1>(NULL, dst, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_COPY_SEND_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
@@ -565,14 +565,14 @@ private:
   __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_ENTRY, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
     return GenericOp<1, 1, 1, 1>(src, dst, nelem);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT)
     if (tid == 0) {
-      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT, eltN*sizeof(T), 0, clock64(),
+      NpKit::CollectGpuEvent(NPKIT_EVENT_RECV_REDUCE_COPY_SEND_EXIT, nelem*sizeof(T), 0, clock64(),
           comm->npKitEventCollectContexts + npKitCtxIdx);
     }
 #endif
