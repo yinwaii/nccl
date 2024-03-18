@@ -239,6 +239,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
 
           // check against user specified HCAs/ports
           if (! (matchIfList(devices[d]->name, port_num, userIfs, nUserIfs, searchExact) ^ searchNot)) {
+            WARN("NET/IB : Erase %s", devices[d]->name);
             continue;
           }
           pthread_mutex_init(&ncclIbDevs[ncclNIbDevs].lock, NULL);
