@@ -132,6 +132,15 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
 
       // Check if user defined which IB device:port to use
       char* userIbEnv = getenv("NCCL_IB_HCA");
+      char* userIbEnvFile = getenv("NCCL_IB_HCA_FILE");
+      if (userIbEnvFile) {
+        FILE *f = fopen(userIbEnvFile, "r");
+        if (f != NULL) {
+          userIbEnv = (char*)malloc(256);
+          fscanf(f, "%s", userIbEnv);
+        }
+        fclose(f);
+      }
       if (userIbEnv != NULL && shownIbHcaEnv++ == 0) INFO(NCCL_NET|NCCL_ENV, "NCCL_IB_HCA set to %s", userIbEnv);
       struct netIf userIfs[MAX_IB_DEVS];
       bool searchNot = userIbEnv && userIbEnv[0] == '^';
@@ -168,6 +177,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
 
           // check against user specified HCAs/ports
           if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs, searchExact) ^ searchNot)) {
+            WARN("NET/IB : Skipping device %s:%d", devices[d]->name, port_num);
             continue;
           }
           TRACE(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
