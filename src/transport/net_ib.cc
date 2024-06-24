@@ -177,7 +177,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
 
           // check against user specified HCAs/ports
           if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs, searchExact) ^ searchNot)) {
-            WARN("NET/IB : Skipping device %s:%d", devices[d]->name, port_num);
+            WARN("NET/IB : Skipping device %s:%d", devices[d]->name, port);
             continue;
           }
           TRACE(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
