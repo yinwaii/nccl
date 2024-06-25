@@ -11,7 +11,7 @@ include ../makefiles/version.mk
 INCEXPORTS  := nccl.h nccl_net.h
 LIBSRCFILES := init.cc channel.cc bootstrap.cc transport.cc enqueue.cc group.cc debug.cc proxy.cc \
 				algorithm/algo_config.cc algorithm/ring.cc algorithm/tree.cc algorithm/collnet.cc algorithm/butterfly_yz.cc algorithm/butterfly.cc algorithm/butterfly2.cc algorithm/mesh_cross.cc algorithm/butterfly2d.cc algorithm/ring2d.cc algorithm/base.cc \
-                misc/nvmlwrap.cc misc/ibvwrap.cc misc/utils.cc misc/argcheck.cc \
+                module/socket.cc misc/nvmlwrap.cc misc/ibvwrap.cc misc/utils.cc misc/argcheck.cc \
 		transport/p2p.cc transport/shm.cc transport/net.cc transport/net_socket.cc transport/net_ib.cc transport/coll_net.cc \
                 collectives/sendrecv.cc collectives/all_reduce.cc collectives/all_gather.cc collectives/broadcast.cc collectives/reduce.cc collectives/reduce_scatter.cc \
                 graph/topo.cc graph/paths.cc graph/search.cc graph/connect.cc graph/tuning.cc graph/xml.cc
