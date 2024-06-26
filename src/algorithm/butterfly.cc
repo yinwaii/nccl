@@ -9,7 +9,7 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
   int rank = comm->rank, nranks = comm->nRanks;
   int nChannels = comm->nChannels;
 
-  WARN("xxx s1");
+  // WARN("xxx s1");
 
   NCCLCHECK(ncclCalloc(&peerRanks, log2i(nranks) * MAXCHANNELS));
 
@@ -24,7 +24,7 @@ ncclResult_t ncclTopoButterfly::topoPreset(struct ncclTopoRanks *topoRanks) {
     }
   }
 
-  WARN("xxx s2");
+  // WARN("xxx s2");
 
   if (comm->algoEnable[NCCL_ALGO_BUTTERFLY] == 1 || comm->algoEnable[NCCL_ALGO_BUTTERFLY2] == 1)
     comm->algoEnable[NCCL_ALGO_BUTTERFLY_YZ] = 1;

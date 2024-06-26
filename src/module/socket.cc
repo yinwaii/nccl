@@ -170,11 +170,11 @@ std::unique_ptr<Socket> Socket::connectAddress(SocketAddress* remoteAddr) {
     SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
 
 #ifdef ENABLE_TRACE
-  TRACE(NCCL_INIT|NCCL_NET, "Connecting to socket %s", sock->toString().c_str());
+  // TRACE(NCCL_INIT|NCCL_NET, "Connecting to socket %s", sock->toString().c_str());
 #endif
 
 	sock->connect();
-	remoteAddr->sa = sock->getAddr();
+	// remoteAddr->sa = sock->getAddr();
 	return sock;
 }
 

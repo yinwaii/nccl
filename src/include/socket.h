@@ -39,7 +39,7 @@ class Socket {
     Socket(const SocketAddress *addr);
     Socket(int fd, const SocketAddress *addr): fd_(fd), addr_(addr->sa) {}
     ~Socket() {
-      INFO(NCCL_ALL, "Socket %s closed by RAII", Socket::toString().c_str());
+      // INFO(NCCL_ALL, "Socket %s closed by RAII", Socket::toString().c_str());
       close(fd_);
     }
     int getFd() const { return fd_; }

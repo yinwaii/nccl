@@ -122,15 +122,12 @@ void TcpBootstrap::Impl::root() {
   std::vector<SocketAddress> rankHandlesRoot(nRanks_); // for initial rank <-> root information exchange
   setFilesLimit();
 
-  TRACE(NCCL_INIT, "Root@@BEGIN");
   /* Receive addresses from all ranks */
   int c = 0;
   do {
     SocketAddress zero = {0}; // for sanity checking
     ExtInfo info;
-    TRACE(NCCL_INIT, "Root recving @@ %d, root addr %s", rank_, rootSock->toString().c_str());
     Socket::tmpPackedRecv(rootSock.get(), &info, sizeof(info));
-    TRACE(NCCL_INIT, "Root recv msg from @@ %d", info.rank);
 
     if (nRanks_ != info.nranks) {
       throw Error("Bootstrap Root : mismatch in rank count from procs " + std::to_string(nRanks_) + " : " + std::to_string(info.nranks), ErrorCode::ncclInternalError);
@@ -162,7 +159,7 @@ void TcpBootstrap::Impl::root() {
 
 void TcpBootstrap::Impl::createRoot() {
   rootThread_ = std::thread([this](){ 
-    CHECKBACK(root());
+    root();
     TRACE(NCCL_INIT, "FINE");
   });
 }
@@ -185,7 +182,6 @@ void TcpBootstrap::Impl::initialize(InternalUniqueId *uniqueId) {
   SocketAddress extHandleNext;
   {
     std::unique_ptr<Socket> extBstrapListenCommRoot = Socket::createListenSocket(&info.extHandleListenRoot);
-    TRACE(NCCL_INIT, "Sending to root @@ %d", rank_);
     // send info on my listening socket to root
     Socket::tmpPackedSend(&uniqueId->addr, &info, sizeof(info));
     // get info on my "next" rank in the bootstrap ring from root
@@ -196,8 +192,15 @@ void TcpBootstrap::Impl::initialize(InternalUniqueId *uniqueId) {
   ringRecvSock_ = listenSock_->accept();
 
   // AllGather all listen handlers
-  peersAddr_[rank_] = addr_;
+  peersAddr_[rank_] = info.extHandleListen;
   allGather(peersAddr_.data(), sizeof(SocketAddress));
+
+  if (rank_ == 0) {
+    for (int i = 0; i < peersAddr_.size(); i++) {
+      char line[1000];
+      INFO(NCCL_INIT, "Rank %d : %s", i, socketToString(&peersAddr_[i].sa, line));
+    }
+  }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank_, nRanks_);
 }
@@ -222,7 +225,7 @@ void TcpBootstrap::Impl::allGather(void* allData, int size) {
 
 void TcpBootstrap::Impl::send(void* data, int size, int peer) {
   std::unique_ptr<Socket> sock = Socket::connectAddress(&peersAddr_[peer]);
-  sock->packedSend(&peer, sizeof(int));
+  sock->packedSend(&rank_, sizeof(int));
   sock->packedSend(data, size);
 }
 

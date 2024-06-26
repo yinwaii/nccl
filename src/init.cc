@@ -456,7 +456,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather1Data[rank].comm = comm;
   struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
   NCCLCHECK(fillInfo(comm, myInfo, commHash));
-  CHECKBACK(comm->bootstrap->allGather(&allGather1Data, sizeof(*allGather1Data)));
+  CHECKBACK(comm->bootstrap->allGather(allGather1Data, sizeof(*allGather1Data)));
   // NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks+1)); // Extra rank to represent CollNet root
@@ -515,7 +515,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(ncclTopoPreset(comm, algos, &allGather3Data[rank].topoRanks));
 
-  CHECKBACK(comm->bootstrap->allGather(&allGather3Data, sizeof(*allGather3Data)));
+  CHECKBACK(comm->bootstrap->allGather(allGather3Data, sizeof(*allGather3Data)));
   // NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
   // Determine nNodes, firstRanks, ...
