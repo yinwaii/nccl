@@ -8,6 +8,7 @@
 #define NCCL_COMM_H_
 
 #include "transport.h"
+#include "bootstrap.h"
 #include "p2p.h"
 #include <array>
 
@@ -76,7 +77,8 @@ struct ncclComm {
   struct ncclPeerInfo* peerInfo;
   struct ncclTopoSystem* topo;
 
-  void* bootstrap;
+  // void* bootstrap;
+  std::unique_ptr<ncclpp::TcpBootstrap> bootstrap;
 
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator

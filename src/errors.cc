@@ -2,27 +2,27 @@
 // Licensed under the MIT license.
 
 #include <cstring>
-#include <errors.h>
+#include "errors.h"
+#include <string>
 
-#include "api.h"
 #define NCCLPP_API_CPP __attribute__((visibility("default")))
 
 namespace ncclpp {
 
 std::string errorToString(enum ErrorCode error) {
   switch (error) {
-    case ErrorCode::SystemError:
+    case ErrorCode::ncclSystemError:
       return "SystemError";
-    case ErrorCode::InternalError:
+    case ErrorCode::ncclInternalError:
       return "InternalError";
-    case ErrorCode::InvalidUsage:
+    case ErrorCode::ncclInvalidUsage:
       return "InvalidUsage";
-    case ErrorCode::Timeout:
-      return "Timeout";
-    case ErrorCode::Aborted:
-      return "Aborted";
-    case ErrorCode::ExecutorError:
-      return "ExecutorError";
+    // case ErrorCode:::
+    //   return "Timeout";
+    // case ErrorCode::Aborted:
+    //   return "Aborted";
+    // case ErrorCode::n:
+    //   return "ExecutorError";
     default:
       return "UnknownError";
   }

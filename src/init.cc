@@ -7,6 +7,7 @@
 #include "nccl.h"
 #include "algo_interface.h"
 #include "interface.h"
+#include "errors.h"
 #include "channel.h"
 #include "nvmlwrap.h"
 #include "bootstrap.h"
@@ -99,7 +100,7 @@ ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
 
 ncclResult_t initNet() {
   // Always initialize bootstrap network
-  NCCLCHECK(bootstrapNetInit());
+  // NCCLCHECK(bootstrapNetInit());
 
   NCCLCHECK(initNetPlugin(&ncclNet, &ncclCollNet));
   if (ncclNet != NULL) return ncclSuccess;
@@ -138,7 +139,10 @@ NCCL_API(ncclResult_t, ncclGetUniqueId, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
-  return bootstrapGetUniqueId(out);
+  ncclpp::UniqueId id;
+  CHECKBACKRET(ncclpp::TcpBootstrap::createUniqueId(), id);
+  memcpy(out->internal, id.data(), NCCL_UNIQUE_ID_BYTES);
+  return ncclSuccess;
 }
 
 // Prevent compiler from optimizing out these operations
@@ -164,8 +168,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
 
-  if (comm->bootstrap)
-    NCCLCHECK(bootstrapClose(comm->bootstrap));
+  // if (comm->bootstrap)
+  //   NCCLCHECK(bootstrapClose(comm->bootstrap));
 
   CUDACHECK(cudaFree(comm->hostDevComm.channels));
   CUDACHECK(cudaFree(comm->devComm));
@@ -436,7 +440,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int nranks = comm->nRanks;
   uint64_t commHash = getHash(commId->internal, NCCL_UNIQUE_ID_BYTES);
   TRACE(NCCL_INIT, "comm %p, commHash %lx, rank %d nranks %d - BEGIN", comm, commHash, rank, nranks);
-  NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
+  CHECKBACKRET(std::make_unique<ncclpp::TcpBootstrap>(rank, nranks), comm->bootstrap);
+  ncclpp::UniqueId id = {};
+  memcpy(id.data(), commId, NCCL_UNIQUE_ID_BYTES);
+  CHECKBACK(comm->bootstrap->initialize(&id));
+  // NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
 
   // AllGather1 - begin
   struct {
@@ -448,7 +456,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather1Data[rank].comm = comm;
   struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
   NCCLCHECK(fillInfo(comm, myInfo, commHash));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
+  CHECKBACK(comm->bootstrap->allGather(&allGather1Data, sizeof(*allGather1Data)));
+  // NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks+1)); // Extra rank to represent CollNet root
   for (int i = 0; i < nranks; i++) {
@@ -506,7 +515,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(ncclTopoPreset(comm, algos, &allGather3Data[rank].topoRanks));
 
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
+  CHECKBACK(comm->bootstrap->allGather(&allGather3Data, sizeof(*allGather3Data)));
+  // NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
   // Determine nNodes, firstRanks, ...
   int* nodesFirstRank;
@@ -648,7 +658,9 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
 
   return ncclSuccess;
 cleanup:
-  if ((*newcomm) && (*newcomm)->bootstrap) bootstrapAbort((*newcomm)->bootstrap);
+  if ((*newcomm) && (*newcomm)->bootstrap)
+    (*newcomm)->bootstrap.reset(nullptr);
+  // bootstrapAbort((*newcomm)->bootstrap);
   *newcomm = NULL;
   return res;
 }
@@ -658,7 +670,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
-    NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, end);
+    // NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, end);
   }
 
   NCCLCHECKGOTO(ncclInit(), res, end);

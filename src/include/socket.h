@@ -7,14 +7,16 @@
 #ifndef NCCL_SOCKET_H_
 #define NCCL_SOCKET_H_
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <netinet/tcp.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <ifaddrs.h>
-#include <net/if.h>
 #include "utils.h"
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <memory>
+#include <net/if.h>
+#include <netdb.h>
+#include <netinet/tcp.h>
+#include <string>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #define MAX_IFS 16
 #define MAX_IF_NAME_SIZE 16
@@ -30,24 +32,38 @@ union socketAddress {
 };
 
 namespace ncclpp {
+using SocketAddress = union socketAddress;
 class Socket {
   public:
-    Socket(int fd = -1) : fd_(fd), deep_(false) {}
+    Socket() = delete;
+    Socket(const SocketAddress *addr);
+    Socket(int fd, const SocketAddress *addr): fd_(fd), addr_(addr->sa) {}
     ~Socket() {
-      if (deep_ && fd_ != -1) close(fd_);
+      INFO(NCCL_ALL, "Socket %s closed by RAII", Socket::toString().c_str());
+      close(fd_);
     }
     int getFd() const { return fd_; }
+    sockaddr getAddr() { return addr_; }
+    std::string toString() const;
+    uint16_t toPort() const { return ntohs(addr_.sa_family == AF_INET ? ((struct sockaddr_in*)&addr_)->sin_port : ((struct sockaddr_in6*)&addr_)->sin6_port); }
 
-    static Socket createListenSocket(union socketAddress *localAddr);
-    static Socket connectAddress(union socketAddress *remoteAddr);
-    void progressOpt(int op, void *ptr, int size, int *offset, int block);
+    static std::unique_ptr<Socket> createListenSocket(SocketAddress *localAddr);
+    static std::unique_ptr<Socket> connectAddress(SocketAddress *remoteAddr);
+    std::unique_ptr<Socket> accept();
     void progress(int op, void *ptr, int size, int *offset);
     void wait(int op, void *ptr, int size, int *offset);
     void send(void *ptr, int size);
-    void receive(void *ptr, int size);
+    void recv(void *ptr, int size);
+    void packedSend(void *ptr, int size);
+    void packedRecv(void *ptr, int size);
+    static void tmpPackedSend(socketAddress *addr, void *ptr, int size);
+    static void tmpPackedRecv(Socket *sock, void *ptr, int size);
   private:
     int fd_;
-    bool deep_;
+    sockaddr addr_;
+    void progressOpt(int op, void *ptr, int size, int *offset, int block);
+    void listen();
+    void connect();
 };
 }
 
@@ -346,7 +362,6 @@ ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr);
 ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr);
 #define NCCL_SOCKET_SEND 0
 #define NCCL_SOCKET_RECV 1
-ncclResult_t socketProgressOpt(int op, int fd, void *ptr, int size, int *offset, int block);
 ncclResult_t socketProgress(int op, int fd, void *ptr, int size, int *offset);
 ncclResult_t socketWait(int op, int fd, void *ptr, int size, int *offset);
 ncclResult_t socketSend(int fd, void *ptr, int size);

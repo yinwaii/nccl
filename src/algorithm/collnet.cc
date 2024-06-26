@@ -1,5 +1,6 @@
 #include "algo_interface.h"
 #include "bootstrap.h"
+#include "errors.h"
 #include "coll_net.h"
 #include "net.h"
 
@@ -110,7 +111,8 @@ int ncclTopoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nra
 
   // send master receives connect info from peer recv master
   if (isMaster && type == 0) {
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
+    CHECKBACK(comm->bootstrap->recv(&sendrecvExchange, sizeof(sendrecvExchange), masterPeer));
+    // NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
     rankInCollNet = sendrecvExchange.collNetRank;
     INFO(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
@@ -138,7 +140,8 @@ int ncclTopoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nra
     NCCLCHECK(ncclCalloc(&allConnects, nranks));
     allConnects[rank].isMaster = isMaster;
     memcpy(&(allConnects[rank].connect), &myConnect, sizeof(struct ncclConnect));
-    NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(*allConnects)), res, cleanup);
+    CHECKBACK(comm->bootstrap->allGather(allConnects, sizeof(*allConnects)));
+    // NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(*allConnects)), res, cleanup);
     // consolidate
     int c = 0;
     for (int r = 0; r < nranks; r++) {
@@ -162,7 +165,8 @@ int ncclTopoCollNet::collNetSetup(struct ncclChannel* channel, int rank, int nra
   if (isMaster && type == 1) {
     sendrecvExchange.collNetRank = rankInCollNet;
     memcpy(&sendrecvExchange.connect, masterConnects+rankInCollNet, sizeof(struct ncclConnect));
-    NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
+    CHECKBACK(comm->bootstrap->send(&sendrecvExchange, sizeof(sendrecvExchange), masterPeer));
+    // NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
     INFO(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
   if (ret > 0) {
@@ -180,7 +184,8 @@ ncclResult_t ncclTopoCollNet::checkCollNetSetup(int rank, int collNetSetupFail) 
   int* allGatherFailures;
   NCCLCHECK(ncclCalloc(&allGatherFailures, nranks));
   allGatherFailures[rank] = collNetSetupFail;
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGatherFailures, sizeof(int)));
+  CHECKBACK(comm->bootstrap->allGather(allGatherFailures, sizeof(int)));
+  // NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGatherFailures, sizeof(int)));
   for (int i=0; i<nranks; i++) {
     if (allGatherFailures[i] != 0) {
       collNetSetupFail = 1;

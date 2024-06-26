@@ -13,7 +13,7 @@
 #include <array>
 
 namespace ncclpp {
-using UniqueId = std::array<uint8_t, NCCL_NET_HANDLE_MAXSIZE>;
+using UniqueId = std::array<uint8_t, NCCL_UNIQUE_ID_BYTES>;
 /// Base class for bootstraps.
 class Bootstrap {
  public:
@@ -33,7 +33,7 @@ class TcpBootstrap : public Bootstrap {
   TcpBootstrap(int rank, int nRanks);
   ~TcpBootstrap();
 
-  void initialize(UniqueId uniqueId);
+  void initialize(UniqueId *uniqueId);
   int getRank() override;
   int getNranks() override;
   void send(void* data, int size, int peer) override;

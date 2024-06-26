@@ -8,7 +8,7 @@
 #define NCCL_ALLOC_H_
 
 #include "nccl.h"
-#include "checks.h"
+// #include "checks.h"
 #include "align.h"
 #include <sys/mman.h>
 

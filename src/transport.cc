@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "bootstrap.h"
+#include "errors.h"
 #include "comm.h"
 #include "interface.h"
 #include "info.h"
@@ -48,7 +49,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     if (conn->connected) { ++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
     NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
-    NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+    CHECKBACK(comm->bootstrap->send(&connect, sizeof(struct ncclConnect), peer));
+    // NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
@@ -57,7 +59,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     if (conn->connected) { ++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
     NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
-    NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+    CHECKBACK(comm->bootstrap->send(&connect, sizeof(struct ncclConnect), peer));
+    // NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
@@ -65,7 +68,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     conn = &channel->peers[peer].send;
     if (conn->connected) {++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+    CHECKBACK(comm->bootstrap->recv(&connect, sizeof(struct ncclConnect), peer));
+    // NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, 1, comm->rank, conn));
     conn->connected = 1;
     CUDACHECK(cudaMemcpy(&channel->devPeers[peer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
@@ -76,7 +80,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     conn = &channel->peers[peer].recv;
     if (conn->connected) {++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+    CHECKBACK(comm->bootstrap->recv(&connect, sizeof(struct ncclConnect), peer));
+    // NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, 1, comm->rank, conn));
     conn->connected = 1;
     CUDACHECK(cudaMemcpy(&channel->devPeers[peer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));

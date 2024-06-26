@@ -2,85 +2,74 @@
 #include "core.h"
 #include "socket.h"
 #include "errors.h"
+#include <cassert>
 
 namespace ncclpp {
-Socket Socket::createListenSocket(union socketAddress *localAddr) {
-  /* IPv4/IPv6 support */
-  int family = localAddr->sa.sa_family;
-  int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+Socket::Socket(const SocketAddress* addr) {
+	if (addr == nullptr) {
+		throw Error("Socket address is null", ErrorCode::ncclInvalidArgument);
+	} else {
+		addr_ = addr->sa;
+		/* IPv4/IPv6 support */
+		int family = addr->sa.sa_family;
+		fd_ = socket(family, SOCK_STREAM, 0);
+		NCCLPPSYSCHECK(fd_, "socket");
+	}
+}
 
-  /* Create socket and bind it to a port */
-  int sockfd = socket(family, SOCK_STREAM, 0);
-	NCCLPPSYSCHECK(sockfd, "socket");
+std::string Socket::toString() const {
+	if (addr_.sa_family != AF_INET && addr_.sa_family != AF_INET6)
+		return "";
+	char host[NI_MAXHOST], service[NI_MAXSERV];
+	(void)getnameinfo(&addr_, sizeof(SocketAddress), host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV);
+	return std::string(host) + ":" + std::string(service);
+}
 
-  if (socketToPort(&localAddr->sa)) {
-    // Port is forced by env. Make sure we get the port.
-    int opt = 1;
-#if defined(SO_REUSEPORT)
-    NCCLPPSYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
-#else
-    NCCLPPSYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)), "setsockopt");
-#endif
-  }
-
-  // localAddr port should be 0 (Any port)
-  NCCLPPSYSCHECK(bind(sockfd, &localAddr->sa, salen), "bind");
+void Socket::listen() {
+	/* IPv4/IPv6 support */
+	int salen = (addr_.sa_family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+	// localAddr port should be 0 (Any port)
+  NCCLPPSYSCHECK(::bind(fd_, &addr_, salen), "bind");
 
   /* Get the assigned Port */
   socklen_t size = salen;
-  NCCLPPSYSCHECK(getsockname(sockfd, &localAddr->sa, &size), "getsockname");
-
-#ifdef ENABLE_TRACE
-  char line[1024];
-  TRACE(NCCL_INIT|NCCL_NET,"Listening on socket %s", socketToString(&localAddr->sa, line));
-#endif
+  NCCLPPSYSCHECK(getsockname(fd_, &addr_, &size), "getsockname");
 
   /* Put the socket in listen mode
    * NB: The backlog will be silently truncated to the value in /proc/sys/net/core/somaxconn
    */
-  NCCLPPSYSCHECK(listen(sockfd, 16384), "listen");
-	return Socket(sockfd);
+  NCCLPPSYSCHECK(::listen(fd_, 16384), "listen");
 }
 
-Socket Socket::connectAddress(union socketAddress* remoteAddr) {
-  /* IPv4/IPv6 support */
-  int family = remoteAddr->sa.sa_family;
-  int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-
-  /* Connect to a hostname / port */
-  int fd = socket(family, SOCK_STREAM, 0);
-	NCCLPPSYSCHECK(fd, "socket");
-
-	const int one = 1;
-  NCCLPPSYSCHECK(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
-
-  /*  const int bufsize = 128*1024;
-    SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
-    SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
-
-  char line[1024];
-#ifdef ENABLE_TRACE
-  TRACE(NCCL_INIT|NCCL_NET,"Connecting to socket %s", socketToString(&remoteAddr->sa, line));
-#endif
-
-  int ret;
+void Socket::connect() {
+	int ret;
   int timedout_retries = 0;
   int refused_retries = 0;
+	int salen = (addr_.sa_family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 retry:
-  SYSCHECKSYNC(connect(fd, &remoteAddr->sa, salen), "connect", ret);
+  SYSCHECKSYNC(::connect(fd_, &addr_, salen), "connect", ret);
+	char line[1000];
 	if (ret < 0) {
 		if ((errno == ECONNREFUSED || errno == ETIMEDOUT)) {
 			if ((errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
 					(errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES)) {
-				if (refused_retries % 1000 == 0) INFO(NCCL_ALL,"Call to connect returned %s, retrying", strerror(errno));
+				if (refused_retries % 1000 == 0) INFO(NCCL_ALL,"Call to connect %s to %s returned %s, retrying", toString().c_str(), socketToString(&addr_, line), strerror(errno));
 				usleep(SLEEP_INT);
 				goto retry;
 			}
 		}
-		std::string str = socketToString(&remoteAddr->sa, line);
-		throw SysError("Connect to " + str + " failed ", errno);
+		throw SysError("Connect to " + toString() + " failed ", errno);
 	}
-	return Socket(fd);
+}
+
+std::unique_ptr<Socket> Socket::accept() {
+	SocketAddress sockaddr;
+	socklen_t socklen = sizeof(sockaddr.sa);
+	int fd = ::accept(fd_, &sockaddr.sa, &socklen);
+	if (fd < 0) {
+		throw SysError("Accept failed", errno);
+	}
+	return std::make_unique<Socket>(fd, &sockaddr);
 }
 
 void Socket::progressOpt(int op, void* ptr, int size, int* offset, int block) {
@@ -117,48 +106,76 @@ void Socket::send(void* ptr, int size) {
 	wait(NCCL_SOCKET_SEND, ptr, size, &offset);
 }
 
-void Socket::receive(void* ptr, int size) {
+void Socket::recv(void* ptr, int size) {
 	int offset = 0;
 	wait(NCCL_SOCKET_RECV, ptr, size, &offset);
 }
 
+void Socket::packedSend(void* ptr, int size) {
+	send(&size, sizeof(size));
+	send(ptr, size);
 }
 
-ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) {
-	ncclpp::Socket socket;
-	CHECKBACKRET(ncclpp::Socket::createListenSocket(localAddr), socket);
-	*fd = socket.getFd();
-	return ncclSuccess;
+void Socket::packedRecv(void* ptr, int size) {
+	int recvSize;
+	recv(&recvSize, sizeof(size));
+	if (recvSize != size) {
+		throw Error("Message truncated : received " + std::to_string(recvSize) + " bytes instead of " + std::to_string(size), ErrorCode::ncclInternalError);
+	}
+	recv(ptr, std::min(recvSize, size));
 }
 
-ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
-	ncclpp::Socket socket;
-	CHECKBACKRET(ncclpp::Socket::connectAddress(remoteAddr), socket);
-	*fd = socket.getFd();
-	return ncclSuccess;
+void Socket::tmpPackedSend(socketAddress *addr, void* data, int size) {
+  std::unique_ptr<Socket> tmpSendComm = Socket::connectAddress(addr);
+	tmpSendComm->packedSend(data, size);
 }
 
-ncclResult_t socketProgressOpt(int op, int fd, void* ptr, int size, int* offset, int block) {
-	CHECKBACK(ncclpp::Socket(fd).progressOpt(op, ptr, size, offset, block));
-	return ncclSuccess;
+void Socket::tmpPackedRecv(Socket *sock, void* data, int size) {
+	std::unique_ptr<Socket> tmpRecvComm = sock->accept();
+	tmpRecvComm->packedRecv(data, size);
 }
 
-ncclResult_t socketProgress(int op, int fd, void* ptr, int size, int* offset) {
-  CHECKBACK(ncclpp::Socket(fd).progress(op, ptr, size, offset));
-	return ncclSuccess;
+std::unique_ptr<Socket> Socket::createListenSocket(SocketAddress *localAddr) {
+	std::unique_ptr<Socket> sock = std::make_unique<Socket>(localAddr);
+	int sockfd = sock->getFd();
+
+  if (sock->toPort()) {
+    // Port is forced by env. Make sure we get the port.
+    int opt = 1;
+#if defined(SO_REUSEPORT)
+    NCCLPPSYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
+#else
+    NCCLPPSYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)), "setsockopt");
+#endif
+  }
+	sock->listen();
+	localAddr->sa = sock->getAddr();
+
+#ifdef ENABLE_TRACE
+  TRACE(NCCL_INIT|NCCL_NET, "Listening on socket %s", sock->toString().c_str());
+#endif
+
+	return sock;
 }
 
-ncclResult_t socketWait(int op, int fd, void* ptr, int size, int* offset) {
-	CHECKBACK(ncclpp::Socket(fd).wait(op, ptr, size, offset));
-  return ncclSuccess;
+std::unique_ptr<Socket> Socket::connectAddress(SocketAddress* remoteAddr) {
+	std::unique_ptr<Socket> sock = std::make_unique<Socket>(remoteAddr);
+	int fd = sock->getFd();
+
+	const int one = 1;
+  NCCLPPSYSCHECK(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
+
+  /*  const int bufsize = 128*1024;
+    SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
+    SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
+
+#ifdef ENABLE_TRACE
+  TRACE(NCCL_INIT|NCCL_NET, "Connecting to socket %s", sock->toString().c_str());
+#endif
+
+	sock->connect();
+	remoteAddr->sa = sock->getAddr();
+	return sock;
 }
 
-ncclResult_t socketSend(int fd, void* ptr, int size) {
-	CHECKBACK(ncclpp::Socket(fd).send(ptr, size));
-  return ncclSuccess;
-}
-
-ncclResult_t socketReceive(int fd, void* ptr, int size) {
-	CHECKBACK(ncclpp::Socket(fd).receive(ptr, size));
-  return ncclSuccess;
 }
