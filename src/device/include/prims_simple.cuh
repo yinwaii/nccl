@@ -61,6 +61,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
 
   inline __device__ int checkAbort(int i, int send) {
     spins++;
+    // printf("check abort t:%d spin %d\n",tid, spins);
     if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
       spins = 0;

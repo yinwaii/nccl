@@ -73,22 +73,22 @@ ncclResult_t ncclTopoEnable(struct ncclComm *comm) {
     NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, comm->algoEnable));
   }
   // Disable CollNet if it is not supported
-  if (comm->collNetSupport == 0) {
-    // If user has hard set NCCL_ALGO=COLLNET, ignore it
-    bool onlyCollnet = true;
-    for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
-      if (comm->algoEnable[a] != 0 && a != NCCL_ALGO_COLLNET) {
-        onlyCollnet = false;
-        break;
-      }
-    }
-    if (onlyCollnet) {
-      for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
-        comm->algoEnable[a] = 1;
-      if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
-    }
-    comm->algoEnable[NCCL_ALGO_COLLNET] = 0;
-  }
+  // if (comm->collNetSupport == 0) {
+  //   // If user has hard set NCCL_ALGO=COLLNET, ignore it
+  //   bool onlyCollnet = true;
+  //   for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
+  //     if (comm->algoEnable[a] != 0 && a != NCCL_ALGO_COLLNET) {
+  //       onlyCollnet = false;
+  //       break;
+  //     }
+  //   }
+  //   if (onlyCollnet) {
+  //     for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) 
+  //       comm->algoEnable[a] = 1;
+  //     if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
+  //   }
+  //   comm->algoEnable[NCCL_ALGO_COLLNET] = 0;
+  // }
   return ncclSuccess;
 }
 

@@ -4,32 +4,19 @@
 
 #define MAP_FOR_ALGOS(f, ...) \
 	f(TREE, ##__VA_ARGS__) \
-	f(RING, ##__VA_ARGS__) \
-	f(COLLNET, ##__VA_ARGS__) \
-  f(BUTTERFLY, ##__VA_ARGS__) \
-  f(BUTTERFLY2, ##__VA_ARGS__) \
-  f(BUTTERFLY_YZ, ##__VA_ARGS__) \
-  f(MESH_CROSS, ##__VA_ARGS__) \
-  f(BUTTERFLY_2D, ##__VA_ARGS__) \
-  f(RING_2D, ##__VA_ARGS__)
+	f(RING, ##__VA_ARGS__) 
+	// f(COLLNET, ##__VA_ARGS__) 
 
-#define NCCL_NUM_ALGORITHMS 9 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 2 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET 2
-#define NCCL_ALGO_BUTTERFLY 3
-#define NCCL_ALGO_BUTTERFLY2 4
-#define NCCL_ALGO_BUTTERFLY_YZ 5
-#define NCCL_ALGO_MESH_CROSS 6
-#define NCCL_ALGO_BUTTERFLY_2D 7
-#define NCCL_ALGO_RING_2D 8
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Split tree (send/recv from different ranks) flowing in both directions
 #define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
-#define NCCL_TOPO_PATTERN_BUTTERFLY 5       // Butterfly
 
 struct ncclRing {
   // Shortcuts for userRanks[1] and userRanks[n-1]
@@ -51,58 +38,6 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
-struct ncclButterfly {
-  int edgeRank;
-  int *peerRanks;
-  int *devPeerRanks;
-};
-
-struct ncclMeshCross {
-  int intra_prev;
-  int intra_next;
-  int *intraRanks;
-  int *devIntraRanks;
-  int nIntraRanks;
-  int inter_prev;
-  int inter_next;
-  int *interRanks;
-  int *devInterRanks;
-  int nInterRanks;
-  int mirror;
-};
-
-struct ncclButterfly2D {
-  int intra_prev;
-  int intra_next;
-  int *intraRanks;
-  int *devIntraRanks;
-  int nIntraRanks;
-  int edgeRank;
-  int *peerRanks;
-  int *devPeerRanks;
-  int nPeerRanks;
-};
-
-struct ncclRing2D {
-  int intra_prev;
-  int intra_next;
-  int *intraRanks;
-  int *devIntraRanks;
-  int nIntraRanks;
-  int inter_prev;
-  int inter_next;
-  int *interRanks;
-  int *devInterRanks;
-  int nInterRanks;
-};
-
-#define NCCL_MAX_BUTTERFLY_STEPS 10
-struct ncclButterfly_yz {
-  int myRank;
-  int peerCount;
-  int lastoneCompressed;
-  int peerRanks[NCCL_MAX_BUTTERFLY_STEPS];
-};
 
 struct ncclChannel {
   union {
@@ -112,11 +47,6 @@ struct ncclChannel {
       struct ncclTree treeDn;
       struct ncclTree collTreeUp;
       struct ncclTree collTreeDn;
-      struct ncclButterfly butterfly;
-      struct ncclButterfly_yz butterfly_yz;
-      struct ncclMeshCross meshCross;
-      struct ncclButterfly2D butterfly2d;
-      struct ncclRing2D ring2d;
 
       int id;
 
@@ -146,11 +76,6 @@ struct ncclTopoRanks {
   int treeUpSend[MAXCHANNELS];
   int treeDnRecv[MAXCHANNELS];
   int treeDnSend[MAXCHANNELS];
-  // butterfly - lyz
-  int butterflyRecv[MAXCHANNELS];
-  int butterflySend[MAXCHANNELS];
-  int node;
-  int internalRank[MAXCHANNELS];
 };
 
 extern const char *ncclAlgoStr[NCCL_NUM_ALGORITHMS];

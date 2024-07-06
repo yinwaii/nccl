@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "ring/broadcast.cuh"
-#include "butterfly_yz/broadcast.cuh"
 #include "common.cuh"
 #include "collectives.h"
 

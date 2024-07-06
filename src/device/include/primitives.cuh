@@ -11,7 +11,7 @@
 #include "reduce_kernel.cuh" // for reduction funcs
 #include "common.cuh"
 
-#define SPINS_BEFORE_CHECK_ABORT 1000000
+#define SPINS_BEFORE_CHECK_ABORT 10000
 
 // Unroll unconditionally the first send/recv since nsend/nrecv should be at
 // least 1 if SEND/RECV is set.
