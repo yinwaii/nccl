@@ -260,9 +260,9 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   info->protocol = -1;
   int nAlgos = NCCL_NUM_ALGORITHMS;
   // Check collNet support
-  int collNetTypeSupport = 0;
-  if (info->comm->collNetSupport)
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
+  // int collNetTypeSupport = 0;
+  // if (info->comm->collNetSupport)
+  //   NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
   // if (collNetTypeSupport != 1) nAlgos--;
   for (int a=0; a<nAlgos; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -446,6 +446,49 @@ ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
+  // static int cnt = 0;
+  // WARN("for abort %d", cnt++);
+  // if (cnt == 15) {
+  //   for (int i = 0; i < 100000; i++)
+  //     ;
+  //   *(info->comm->abortFlag) = 1;
+  // }
+  // if (cnt == 16) {
+  //   struct ncclComm* comm = info->comm;
+  //   for (int c=0; c<comm->p2pnChannels; c++) {
+  //     struct ncclChannel* channel = comm->channels+c;
+  //     for (int i=0; i<channel->collCount; i++) {
+  //       channel->collectives[(channel->collStart + i)%NCCL_MAX_OPS].active = 0;
+  //     }
+  //     channel->collFifoTail = channel->collStart;
+  //     channel->collCount = 0;
+  //   }
+  //   /* Cancel all proxy ops : mark them as ncclProxyOpNone and they should be freed later on */
+  //   struct ncclProxyState* state = &comm->proxyState;
+  //   struct ncclProxyArgs *op, *start;
+  //   pthread_mutex_lock(&state->mutex);
+  //   op = start = state->ops;
+  //   while (op) {
+  //     if (op->opCount >= comm->lastOpCount) op->state = ncclProxyOpNone;
+  //     struct ncclProxyArgs *peerOp = op->nextPeer;
+  //     while (peerOp) {
+  //       if (peerOp->opCount >= comm->lastOpCount) peerOp->state = ncclProxyOpNone;
+  //       peerOp = peerOp->nextPeer;
+  //     }
+  //     op->connector->proxyAppend = NULL;
+  //     op = op->next;
+  //     if (op == start) break;
+  //   }
+  //   state->ops = NULL;
+  //   comm->opCount = comm->lastOpCount;
+  //   pthread_cond_signal(&state->cond);
+  //   pthread_mutex_unlock(&state->mutex);
+  //   if (comm->proxyThread) pthread_join(comm->proxyThread, NULL);
+  //   comm->proxyThread = NULL;
+  //   NCCLCHECK(ncclProxyCreate(comm));
+  //   *(info->comm->abortFlag) = 0;
+  //   INFO(NCCL_COLL, "reInit done");
+  // }
   // Launch asynchronously if needed
   if (ncclAsyncMode()) {
     ncclResult_t ret = ncclSuccess;
@@ -462,7 +505,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
 
-    INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+    INFO(NCCL_COLL,"%s: async opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 
@@ -480,7 +523,7 @@ end:
     NCCLCHECK(ArgsCheck(info));
     NCCLCHECK(checkSetStream(info));
 
-    INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+    INFO(NCCL_COLL,"%s: nonasync opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 

@@ -274,6 +274,7 @@ ncclResult_t ncclGroupEnd() {
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclBarrierEnqueue(args->coll.comm), ret, end);
     }
+    INFO(NCCL_INIT, "GroupEnd : op %d Barrier Enqueue Done", args->coll.comm->opCount);
   }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
@@ -281,6 +282,7 @@ ncclResult_t ncclGroupEnd() {
       CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclBarrierEnqueueWait(args->coll.comm), ret, end);
     }
+    INFO(NCCL_INIT, "GroupEnd : op %d Barrier Enqueue Wait Done", args->coll.comm->opCount);
   }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
@@ -289,6 +291,7 @@ ncclResult_t ncclGroupEnd() {
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
     }
+    INFO(NCCL_INIT, "GroupEnd : op %d Enqueue Events Done", args->coll.comm->opCount);
   }
 
   goto end;

@@ -65,6 +65,7 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
     connector->proxyAppend = args;
   }
   pthread_mutex_unlock(&state->mutex);
+  INFO(NCCL_NET,"Proxy thread adding op %d ops %p steps", args->opCount, state->ops, args->nsteps);
 }
 
 template <int type>
@@ -118,6 +119,7 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
 }
 
 void* persistentThread(void *comm_) {
+  INFO(NCCL_NET,"Proxy thread started");
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
   struct ncclProxyArgs* op = NULL;
@@ -126,7 +128,10 @@ void* persistentThread(void *comm_) {
   int idleSpin = 0;
   while (1) {
     do {
-      if (*comm->abortFlag) return NULL;
+      if (*comm->abortFlag) {
+        WARN("Aborting proxy thread");
+        return NULL;
+      }
       if (op == NULL) {
         pthread_mutex_lock(&state->mutex);
         op = state->ops;
@@ -136,6 +141,7 @@ void* persistentThread(void *comm_) {
             pthread_mutex_unlock(&state->mutex);
             return NULL;
           }
+          INFO(NCCL_NET,"Proxy thread waiting for work");
           pthread_cond_wait(&state->cond, &state->mutex);
         }
         pthread_mutex_unlock(&state->mutex);
@@ -144,6 +150,7 @@ void* persistentThread(void *comm_) {
     op->idle = 0;
     // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
     // yet and might be cancelled before they even start. Hold on on those.
+    // INFO(NCCL_NET, "Proxy thread processing op %d", op->opCount);
     if (op->state != ncclProxyOpNone && op->opCount < comm->lastOpCount) ret = op->progress(op);
     if (ret != ncclSuccess) {
       comm->fatalError = ret;
@@ -194,6 +201,7 @@ void* persistentThread(void *comm_) {
 }
 
 ncclResult_t ncclProxyStart(struct ncclComm* comm) {
+  INFO(NCCL_NET,"Proxy thread starting");
   pthread_mutex_lock(&comm->proxyState.mutex);
   if (comm->proxyState.ops != NULL)
     pthread_cond_signal(&comm->proxyState.cond);

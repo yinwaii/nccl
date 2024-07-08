@@ -100,6 +100,8 @@ namespace {
 
       // Final wait/copy.
       prims.directRecv(thisOutput+offset, offset, nelem);
+      // if (tid == 0)
+        // printf("ring finished\n");
     }
   }
 }

@@ -14,5 +14,8 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff, size_t recv
   struct ncclInfo info = { ncclCollReduceScatter, "ReduceScatter",
     sendbuff, recvbuff, recvcount, datatype, op, 0, comm, stream, /* Args */
     REDUCESCATTER_CHUNKSTEPS, REDUCESCATTER_SLICESTEPS };
-  return ncclEnqueueCheck(&info);
+  NCCLCHECK(ncclGroupStart());
+  NCCLCHECK(ncclEnqueueCheck(&info));
+  NCCLCHECK(ncclGroupEnd());
+  return ncclSuccess;
 }

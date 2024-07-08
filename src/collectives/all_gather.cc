@@ -14,5 +14,8 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
   struct ncclInfo info = { ncclCollAllGather, "AllGather",
     sendbuff, recvbuff, sendcount, datatype, ncclSum, 0, comm, stream, /* Args */
     ALLGATHER_CHUNKSTEPS, ALLGATHER_SLICESTEPS };
-  return ncclEnqueueCheck(&info);
+  NCCLCHECK(ncclGroupStart());
+  NCCLCHECK(ncclEnqueueCheck(&info));
+  NCCLCHECK(ncclGroupEnd());
+  return ncclSuccess;
 }

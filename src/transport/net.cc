@@ -234,10 +234,15 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     void* mhandle = *(resources->mhandlesProto[p]);
     args->idle = 1;
     if (args->head < args->end) {
-      //       static int cnt = 0;
+      // if (*(args->connector->comm->abortFlag) == 1) {
+      //   args->head = args->end;
+      //   args->state = ncclProxyOpNone;
+      //   return ncclSuccess;
+      // }
+      // static int cnt = 0;
       // cnt++;
       // if (cnt % 1000000 == 0)
-      //   printf("send: head %ld end %ld delta %ld\n", args->head, args->end, args->end - args->head);
+      //   printf("send %d: head %ld end %ld delta %ld\n", args->opCount, args->head, args->end, args->end - args->head);
       int buffSlot = args->tail%NCCL_STEPS;
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
@@ -302,7 +307,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               sizesFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
               __sync_synchronize();
+              
               args->tail += args->sliceSteps;
+              // INFO(NCCL_NET, "tosend %d head %d tail %d end %d", args->opCount, args->head, args->tail, args->end);
               args->idle = 0;
             }
           }
@@ -313,7 +320,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         int buffSlot = args->head%NCCL_STEPS;
         NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
         if (done) {
+          
           args->head += args->sliceSteps;
+          // INFO(NCCL_NET, "sended %d head %d tail %d end %d", args->opCount, args->head, args->tail, args->end);
           resources->sendMem->head = args->head;
           args->idle = 0;
         }
@@ -345,10 +354,15 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     char* localBuff = args->connector->conn.buffs[p];
     void* mhandle = *(resources->mhandlesProto[p]);
     if (args->head < args->end) {
+      // if (*(args->connector->comm->abortFlag) == 1) {
+      //   args->head = args->end;
+      //   args->state = ncclProxyOpNone;
+      //   return ncclSuccess;
+      // }
       // static int cnt = 0;
       // cnt++;
       // if (cnt % 100000 == 0)
-      //   printf("recv: head %ld end %ld delta %ld\n", args->head, args->end, args->end - args->head);
+      //   printf("recv %d: head %ld end %ld delta %ld\n", args->opCount, args->head, args->end, args->end - args->head);
       volatile uint64_t* sendHead = &resources->sendMem->head;
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
@@ -356,6 +370,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));
         if (args->requests[buffSlot] != NULL) {
           args->tail += args->sliceSteps;
+          // INFO(NCCL_NET, "torecv %d head %d tail %d end %d", args->opCount, args->head, args->tail, args->end);
           args->idle = 0;
         }
       }
@@ -365,6 +380,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
         if (done) {
           args->head += args->sliceSteps;
+          // INFO(NCCL_NET, "recved %d head %d tail %d end %d", args->opCount, args->head, args->tail, args->end);
           if (args->protocol == NCCL_PROTO_SIMPLE) {
             if (resources->useGdr) NCCLCHECK(ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size, mhandle));
             resources->recvMem->tail = args->head;
