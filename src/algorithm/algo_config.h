@@ -45,8 +45,6 @@ struct ncclChannel {
       struct ncclRing ring;
       struct ncclTree treeUp;
       struct ncclTree treeDn;
-      struct ncclTree collTreeUp;
-      struct ncclTree collTreeDn;
 
       int id;
 

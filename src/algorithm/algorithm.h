@@ -3,7 +3,7 @@
 #include "comm.h"
 #include "ring.h"
 #include "tree.h"
-#include "collnet.h"
+// #include "collnet.h"
 
 using ncclTopoAlgo = std::shared_ptr<ncclTopoBase>;
 AlgoInfo<ncclTopoAlgo> ncclTopoAlgos(struct ncclComm *comm);
