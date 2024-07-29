@@ -16,13 +16,29 @@
 #include "shm.h"
 #include "p2p.h"
 
+typedef enum : uint8_t {
+  ncclPatternRing,
+  ncclPatternRingTwice,
+  ncclPatternPipelineFrom,
+  ncclPatternPipelineTo,
+  ncclPatternTreeUp,
+  ncclPatternTreeDown,
+  ncclPatternTreeUpDown,
+  ncclPatternCollnetChain,
+  ncclPatternCollnetDirect,
+  ncclPatternNvls,
+  ncclPatternNvlsTree,
+  ncclPatternSend,
+  ncclPatternRecv
+} ncclPattern_t;
+
 enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyState*, struct ncclProxyArgs*);
 
 #define NCCL_PROXY_MAX_SUBS MAXCHANNELS
-static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
+static_assert(2*NCCL_MAX_DEV_WORK_P2P_PER_BATCH <= MAXCHANNELS, "Not enough sub space for max work elements");
 
 union ncclProxyOpSpecifics {
   struct {
@@ -33,7 +49,6 @@ union ncclProxyOpSpecifics {
 
 struct ncclProxyOp {
   struct ncclProxyConnection* connection;
-  void* buffer;
   ssize_t nbytes;
   uint64_t opCount;
   int root;
@@ -49,6 +64,11 @@ struct ncclProxyOp {
   uint8_t /*ncclPattern_t*/ pattern;
   uint8_t protocol;
   uint8_t reg;
+  // collnet buffer reg handles
+  void* sendMhandle;
+  void* recvMhandle;
+  uint8_t* sendbuff;
+  uint8_t* recvbuff;
 
   union ncclProxyOpSpecifics specifics;
 
@@ -58,8 +78,14 @@ struct ncclProxyOp {
 struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
   int reg;
-  void* buffer;
+  // p2p mhandle
   void* mhandle;
+  // collnet handles
+  void* sendMhandle;
+  void* recvMhandle;
+  uint8_t* sendbuff;
+  uint8_t* recvbuff;
+  size_t offset;
   int channelId;
   int nsteps;
   ssize_t nbytes;
@@ -88,6 +114,10 @@ struct ncclProxyArgs {
   int sliceSteps;
   int chunkSteps;
   int chunkSize;
+  size_t totalSendSize;
+  size_t totalRecvSize;
+  size_t sendSizePerRound;
+  size_t recvSizePerRound;
   uint8_t /*ncclDataType_t*/ dtype;
   uint8_t /*ncclDevRedOp_t*/ redOp;
   uint8_t /*ncclPattern_t*/ pattern;
@@ -110,8 +140,9 @@ struct ncclProxyArgs {
 
 // ProxyOps are used to communicate between main thread and service thread
 // Make sure we have enough to store two full rounds of operations on all channels.
-// Otherwise we'd be unable to post half of them to free new elements.
-#define MAX_OPS_PER_PEER (2*MAXCHANNELS*NCCL_MAX_WORK_ELEMENTS_P2P)
+// Otherwise we'd be unable to post half of them to free new elements. Each
+// p2p work contains a send and recv proxy op hence the 2x before it.
+#define MAX_OPS_PER_PEER (2*MAXCHANNELS*2*NCCL_MAX_DEV_WORK_P2P_PER_BATCH)
 
 struct ncclProxyOpsPool {
   struct ncclProxyOp ops[MAX_OPS_PER_PEER*NCCL_MAX_LOCAL_RANKS];
@@ -229,7 +260,7 @@ struct ncclProxyState {
   bool dmaBufSupport;
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
-  volatile uint32_t* abortFlag;
+  uint32_t* abortFlag;
   // Service threads
   pthread_t thread;
   pthread_t threadUDS;
@@ -287,7 +318,6 @@ enum proxyMode {
 };
 
 ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* proxyOp, bool *justInquire);
-ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp, int reg);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses, uint64_t *peerAddressesUDS);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
@@ -302,6 +332,8 @@ enum ncclProxyMsgType {
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
   ncclProxyMsgGetFd = 9, // cuMem API support (UDS)
+  ncclProxyMsgRegister = 10,
+  ncclProxyMsgDeregister = 11
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
